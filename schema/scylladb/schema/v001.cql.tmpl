@@ -1,0 +1,99 @@
+--
+-- Creates ScyllaDB keyspace with tables for crawl logs and page logs.
+--
+-- Required parameters:
+--
+--   keyspace
+--     name of the keyspace
+--   replication
+--     replication strategy for the keyspace, such as
+--       for prod environments
+--         {'class': 'NetworkTopologyStrategy', '$datacenter': '${replication_factor}' }
+--       for test environments
+--         {'class': 'SimpleStrategy', 'replication_factor': '1'}
+--
+-- Non-configurable settings:
+--   gc_grace_seconds is non-zero, see: http://www.uberobert.com/cassandra_gc_grace_disables_hinted_handoff/
+--   For TTL of 2 days, compaction window is 1 hour, rule of thumb here: http://thelastpickle.com/blog/2016/12/08/TWCS-part1.html
+
+CREATE KEYSPACE IF NOT EXISTS ${keyspace} WITH replication = ${replication};
+
+CREATE TYPE IF NOT EXISTS ${keyspace}.error (
+    code    int,
+    msg     text,
+    detail  text,
+);
+
+CREATE TYPE IF NOT EXISTS ${keyspace}.resource (
+    warc_id         uuid,
+    uri             text,
+    referrer        text,
+    resource_type   text,
+    content_type    text,
+    discovery_path  text,
+    method          text,
+    from_cache      boolean,
+    from_renderable boolean,
+    status_code     int,
+    error           frozen<error>,
+);
+
+-- Notice we have span_hash. This exists only for zipkin backwards compat. Zipkin allows spans with the same ID.
+-- Note: Cassandra re-orders non-PK columns alphabetically, so the table looks differently in CQLSH "describe table".
+-- start_time is bigint instead of timestamp as we require microsecond precision
+CREATE TABLE IF NOT EXISTS ${keyspace}.page_log (
+    warc_id                 uuid,
+    execution_id            uuid,
+    job_execution_id        uuid,
+    collection_final_name   text,
+    uri                     text,
+    referrer                text,
+    method                  text,
+    outlinks                set<text>,
+    resources               list<frozen<resource>>,
+    PRIMARY KEY (execution_id)
+)
+    WITH compaction = {
+        'compaction_window_size': '1',
+        'compaction_window_unit': 'HOURS',
+        'class': 'TimeWindowCompactionStrategy'
+    }
+    AND dclocal_read_repair_chance = 0.0
+    AND speculative_retry = 'NONE'
+    AND gc_grace_seconds = 10800; -- 3 hours of downtime acceptable on nodes
+
+CREATE TABLE IF NOT EXISTS ${keyspace}.crawl_log (
+    warc_id                 uuid,
+    execution_id            uuid,
+    job_execution_id        uuid,
+    requested_uri           text,
+    response_uri            text,
+    referrer                text,
+    collection_final_name   text,
+    method                  text,
+    time_stamp              timestamp,
+    fetch_time_stamp        timestamp,
+    retries                 int,
+    ip_address              text,
+    warc_refers_to          text,
+    record_type             text,
+    content_type            text,
+    discovery_path          text,
+    status_code             int,
+    error                   error,
+    size                    bigint,
+    fetch_time_ms           bigint,
+    block_digest            text,
+    payload_digest          text,
+    storage_ref             text,
+    PRIMARY KEY (execution_id, fetch_time_stamp)
+)
+    WITH compaction = {
+        'compaction_window_size': '1',
+        'compaction_window_unit': 'HOURS',
+        'class': 'TimeWindowCompactionStrategy'
+    }
+    AND dclocal_read_repair_chance = 0.0
+    AND default_time_to_live = ${trace_ttl}
+    AND speculative_retry = 'NONE'
+    AND gc_grace_seconds = 10800; -- 3 hours of downtime acceptable on nodes
