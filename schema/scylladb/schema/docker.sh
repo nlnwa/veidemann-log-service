@@ -40,7 +40,7 @@ echo "Generating the schema for the keyspace ${KEYSPACE} and datacenter ${DATACE
 
 
 if [ -z "$PASSWORD" ]; then
-  MODE="${MODE}" DATACENTER="${DATACENTER}" KEYSPACE="${KEYSPACE}" /scylla-schema/create.sh "${TEMPLATE}" | ${CQLSH} ${CQLSH_SSL} ${CQLSH_HOST} ${CQLSH_PORT}
+  MODE="${MODE}" DATACENTER="${DATACENTER}" KEYSPACE="${KEYSPACE}" /schema/create.sh "${TEMPLATE}" | ${CQLSH} ${CQLSH_SSL} ${CQLSH_HOST} ${CQLSH_PORT}
 else
-  MODE="${MODE}" DATACENTER="${DATACENTER}" KEYSPACE="${KEYSPACE}" /scylla-schema/create.sh "${TEMPLATE}" | ${CQLSH} ${CQLSH_SSL} ${CQLSH_HOST} ${CQLSH_PORT} -u ${USER} -p ${PASSWORD}
+  MODE="${MODE}" DATACENTER="${DATACENTER}" KEYSPACE="${KEYSPACE}" /schema/create.sh "${TEMPLATE}" | ${CQLSH} ${CQLSH_SSL} ${CQLSH_HOST} ${CQLSH_PORT} -u ${USER} -p ${PASSWORD}
 fi
