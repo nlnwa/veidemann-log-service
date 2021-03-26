@@ -15,15 +15,15 @@ import (
 )
 
 func main() {
-	pflag.String("host", "", "interface the log service api listens to. No value means all interfaces.")
-	pflag.Int("port", 8080, "port the browser controller api listens to.")
+	pflag.String("host", "", "Interface the log service API is listening to. No value means all interfaces.")
+	pflag.Int("port", 8090, "Port the log service api is listening to")
 
 	pflag.StringSlice("db-host", []string{}, "List of db hosts")
-	pflag.StringSlice("db-keyspace", []string{}, "name of keyspace")
+	pflag.StringSlice("db-keyspace", []string{}, "Name of keyspace")
 
-	pflag.String("log-level", "info", "log level, available levels are panic, fatal, error, warn, info, debug and trace")
-	pflag.String("log-formatter", "logfmt", "log formatter, available values are logfmt and json")
-	pflag.Bool("log-method", false, "log method names")
+	pflag.String("log-level", "info", "Log level, available levels are: panic, fatal, error, warn, info, debug and trace")
+	pflag.String("log-formatter", "logfmt", "Log formatter, available values are: logfmt and json")
+	pflag.Bool("log-method", false, "Log file:line of method caller")
 	pflag.Parse()
 
 	_ = viper.BindPFlags(pflag.CommandLine)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 National Library of Norway.
+ * Copyright 2021 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package client
+package logclient
 
 import (
 	"context"
@@ -22,25 +22,27 @@ import (
 	"io"
 )
 
-type logClient struct {
-	*grpcClient
+type LogClient struct {
+	*Connection
 	logV1.LogClient
 }
 
-func New(opts ...Option) *logClient {
-	return &logClient{grpcClient: newGrpcClient("logClient", opts...)}
+func New(opts ...Option) *LogClient {
+	return &LogClient{
+		Connection: NewConnection("LogClient", opts...),
+	}
 }
 
-func (l *logClient) Connect() error {
-	if err := l.grpcClient.Connect(); err != nil {
+func (l *LogClient) Connect() error {
+	if conn, err := l.Dial(); err != nil {
 		return err
 	} else {
-		l.LogClient = logV1.NewLogClient(l.grpcClient.Connection())
+		l.LogClient = logV1.NewLogClient(conn)
 		return nil
 	}
 }
 
-func (l *logClient) WriteCrawlLogs(ctx context.Context, crawlLogs []*logV1.CrawlLog) error {
+func (l *LogClient) WriteCrawlLogs(ctx context.Context, crawlLogs []*logV1.CrawlLog) error {
 	stream, err := l.LogClient.WriteCrawlLog(ctx)
 	if err != nil {
 		return err
@@ -59,7 +61,7 @@ func (l *logClient) WriteCrawlLogs(ctx context.Context, crawlLogs []*logV1.Crawl
 	return nil
 }
 
-func (l *logClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) error {
+func (l *LogClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) error {
 	stream, err := l.LogClient.WritePageLog(ctx)
 	if err != nil {
 		return err
