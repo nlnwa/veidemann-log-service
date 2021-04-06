@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/gocql/gocql v0.0.0-20210129204804-4364a4b9cfdd
 	github.com/golang/protobuf v1.5.0
-	github.com/nlnwa/veidemann-api/go v0.0.0-20210406091532-fb251f573dfa
+	github.com/nlnwa/veidemann-api/go v0.0.0-20210406160358-ce1afa160662
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v0.9.3
