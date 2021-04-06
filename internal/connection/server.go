@@ -7,13 +7,15 @@ import (
 )
 
 type Server struct {
-	address string
 	*grpc.Server
+	opts    []grpc.ServerOption
+	address string
 }
 
-func NewGrpcServer(host string, port int) *Server {
+func NewGrpcServer(host string, port int, opts ...grpc.ServerOption) *Server {
 	return &Server{
 		address: fmt.Sprintf("%s:%d", host, port),
+		opts: opts,
 	}
 }
 
@@ -23,13 +25,7 @@ func (s *Server) Serve() error {
 		return fmt.Errorf("failed to listen on %s: %v", s.address, err)
 	}
 
-	//tracer := opentracing.GlobalTracer()
-	//var opts = []grpc.ServerOption{
-	//	grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)),
-	//	grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)),
-	//}
-	var opts []grpc.ServerOption
-	s.Server = grpc.NewServer(opts...)
+	s.Server = grpc.NewServer(s.opts...)
 
 	return s.Server.Serve(lis)
 }

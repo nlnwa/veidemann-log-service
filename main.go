@@ -5,9 +5,12 @@ import (
 	"github.com/nlnwa/veidemann-log-service/internal/connection"
 	"github.com/nlnwa/veidemann-log-service/internal/logger"
 	"github.com/nlnwa/veidemann-log-service/internal/scylla"
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc"
 	"os"
 	"os/signal"
 	"strings"
@@ -51,9 +54,13 @@ func main() {
 		Str("keyspace", viper.GetString("db-keyspace")).
 		Msgf("Connected to scylla cluster")
 
+	tracer := opentracing.GlobalTracer()
+
 	server := connection.NewGrpcServer(
 		viper.GetString("host"),
 		viper.GetInt("port"),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)),
 	)
 	logV1.RegisterLogServer(server.Server, logServer)
 

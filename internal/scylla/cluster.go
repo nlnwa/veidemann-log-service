@@ -27,7 +27,7 @@ type Options struct {
 	Keyspace string
 }
 
-// Client represent the client
+// Client can connect and talk to scylladb cluster.
 type Client struct {
 	config  *gocql.ClusterConfig
 	session gocqlx.Session

@@ -13,6 +13,7 @@ import (
 )
 
 type logServer struct {
+	// logServer is a scylladb client
 	*Client
 	logV1.UnimplementedLogServer
 	crawlLogMetric chan *logV1.CrawlLog
@@ -25,16 +26,16 @@ type logServer struct {
 
 // New creates a new client with the specified address and apiKey.
 func New(options Options) *logServer {
-	crawlLogC := make(chan *logV1.CrawlLog, 100)
-	pageLogC := make(chan *logV1.PageLog, 100)
+	crawlLogMetric := make(chan *logV1.CrawlLog, 100)
+	pageLogMetric := make(chan *logV1.PageLog, 100)
 
 	go func() {
-		for crawlLog := range crawlLogC {
+		for crawlLog := range crawlLogMetric {
 			metrics.CollectCrawlLog(crawlLog)
 		}
 	}()
 	go func() {
-		for pageLog := range pageLogC {
+		for pageLog := range pageLogMetric {
 			metrics.CollectPageLog(pageLog)
 		}
 	}()
@@ -43,11 +44,12 @@ func New(options Options) *logServer {
 		Client: &Client{
 			config: createCluster(gocql.Quorum, options.Keyspace, options.Hosts...),
 		},
-		crawlLogMetric: crawlLogC,
-		pageLogMetric:  pageLogC,
+		crawlLogMetric: crawlLogMetric,
+		pageLogMetric:  pageLogMetric,
 	}
 }
 
+// Connect connects to a scylladb cluster.
 func (l *logServer) Connect() error {
 	err := l.Client.Connect()
 	if err != nil {
@@ -63,7 +65,7 @@ func (l *logServer) Connect() error {
 	return nil
 }
 
-// Close closes the database session
+// Close closes the connection to database session
 func (l *logServer) Close() {
 	l.insertCrawlLog.Release()
 	l.insertPageLog.Release()
@@ -118,11 +120,11 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 		req, err := stream.Recv()
 		if err == io.EOF {
 			l.pageLogMetric <- pageLog
-			cl, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(pageLog)
+			pl, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(pageLog)
 			if err != nil {
 				return err
 			}
-			return insert.Bind(cl).Exec()
+			return insert.Bind(pl).Exec()
 		}
 		if err != nil {
 			return err
