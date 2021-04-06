@@ -103,8 +103,8 @@ func (l *LogClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) er
 	}
 
 	_, err = stream.CloseAndRecv()
-	if err != io.EOF {
-		return err
+	if err == io.EOF {
+		return nil
 	}
-	return nil
+	return err
 }
