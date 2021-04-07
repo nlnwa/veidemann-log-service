@@ -8,14 +8,13 @@ import (
 
 type Server struct {
 	*grpc.Server
-	opts    []grpc.ServerOption
 	address string
 }
 
 func NewGrpcServer(host string, port int, opts ...grpc.ServerOption) *Server {
 	return &Server{
 		address: fmt.Sprintf("%s:%d", host, port),
-		opts: opts,
+		Server: grpc.NewServer(opts...),
 	}
 }
 
@@ -24,9 +23,6 @@ func (s *Server) Serve() error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %v", s.address, err)
 	}
-
-	s.Server = grpc.NewServer(s.opts...)
-
 	return s.Server.Serve(lis)
 }
 
