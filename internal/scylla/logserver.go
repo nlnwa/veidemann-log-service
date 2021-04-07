@@ -57,7 +57,7 @@ func (l *logServer) Connect() error {
 	}
 
 	// setup prepared queries
-	l.insertCrawlLog = qb.Insert("crawl_log").Query(l.session)
+	l.insertCrawlLog = qb.Insert("crawl_log").Json().Query(l.session)
 	l.insertPageLog = qb.Insert("page_log").Json().Query(l.session)
 	l.selectCrawlLog = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Json().Query(l.session)
 	l.selectPageLog = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Json().Query(l.session)
