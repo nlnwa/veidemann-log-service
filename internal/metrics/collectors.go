@@ -116,7 +116,7 @@ var collectors = map[string]prometheus.Collector{
 }
 
 func registerCollectors() {
-	prometheus.MustRegister(version.NewCollector("veidemann-log-service"))
+	prometheus.MustRegister(version.NewCollector("veidemann_log_service"))
 
 	for i := range collectors {
 		collector := collectors[i]
