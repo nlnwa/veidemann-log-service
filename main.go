@@ -22,7 +22,7 @@ func main() {
 	pflag.Int("port", 8090, "Port the log service api is listening to")
 
 	pflag.StringSlice("db-host", []string{}, "List of db hosts")
-	pflag.StringSlice("db-keyspace", []string{}, "Name of keyspace")
+	pflag.String("db-keyspace", "v7n", "Name of keyspace")
 
 	pflag.String("log-level", "info", "Log level, available levels are: panic, fatal, error, warn, info, debug and trace")
 	pflag.String("log-formatter", "logfmt", "Log formatter, available values are: logfmt and json")
