@@ -2,12 +2,12 @@ package scylla
 
 import (
 	"github.com/gocql/gocql"
-	"github.com/golang/protobuf/ptypes"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/nlnwa/veidemann-log-service/internal/metrics"
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"time"
 )
@@ -94,13 +94,10 @@ func (l *logServer) WriteCrawlLog(stream logV1.Log_WriteCrawlLogServer) error {
 		// Generate nanosecond timestamp with millisecond precision.
 		// (ScyllaDB does not allow storing timestamps with better than millisecond precision)
 		ns := (time.Now().UnixNano() / 1e6) * 1e6
-		timeStamp, err := ptypes.TimestampProto(time.Unix(0, ns))
-		if err != nil {
-			return err
-		}
-		cl.TimeStamp = timeStamp
-
+		cl.TimeStamp = timestamppb.New(time.Unix(0, ns))
+		// Convert fetchstimestamp to have millisecond precision
 		cl.FetchTimeStamp.Nanos = cl.FetchTimeStamp.Nanos - (cl.FetchTimeStamp.Nanos % 1e6)
+
 		crawlLog, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(cl)
 		if err != nil {
 			return err
