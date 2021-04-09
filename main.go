@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	pflag.String("host", "", "Interface the log service API is listening to. No value means all interfaces.")
+	pflag.String("host", "localhost", "Interface the log service API is listening to. No value means all interfaces.")
 	pflag.Int("port", 8090, "Port the log service api is listening to")
 
 	pflag.StringSlice("db-host", []string{}, "List of db hosts")
