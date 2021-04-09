@@ -73,6 +73,10 @@ func main() {
 		}
 		server.Shutdown()
 	}()
+
+	log.Info().
+		Int("port", viper.GetInt("port")).
+		Msgf("Listening")
 	err = server.Serve()
 	if err != nil {
 		log.Err(err).Msg("")
