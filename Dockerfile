@@ -19,7 +19,7 @@ FROM gcr.io/distroless/base
 COPY --from=build /build/veidemann-log-service /
 
 # api server
-EXPOSE 8080/tcp
+EXPOSE 8090/tcp
 # prometheus metrics server
 EXPOSE 9153/tcp
 
