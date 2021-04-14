@@ -3,7 +3,6 @@ package scylla
 import (
 	"github.com/gocql/gocql"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
-	"github.com/nlnwa/veidemann-log-service/internal/metrics"
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -31,12 +30,12 @@ func New(options Options) *logServer {
 
 	go func() {
 		for crawlLog := range crawlLogMetric {
-			metrics.CollectCrawlLog(crawlLog)
+			CollectCrawlLog(crawlLog)
 		}
 	}()
 	go func() {
 		for pageLog := range pageLogMetric {
-			metrics.CollectPageLog(pageLog)
+			CollectPageLog(pageLog)
 		}
 	}()
 
@@ -145,52 +144,111 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 }
 
 func (l *logServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log_ListPageLogsServer) error {
-	q := l.selectPageLog.
-		WithContext(stream.Context()).
-		BindMap(qb.M{"execution_id": req.GetQueryTemplate().GetExecutionId()})
-	if req.GetPageSize() > 0 {
-		q = q.PageSize(int(req.PageSize))
-	}
-	defer q.Release()
+	offset := int(req.GetOffset())
+	pageSize := int(req.GetPageSize())
+	executionId := req.GetQueryTemplate().GetExecutionId()
 
-	iter := q.Iter()
-	defer func() { _ = iter.Close() }()
+	// count is the current number of rows sent to the client
+	count := 0
 
-	var pageLogJSON string
-	for iter.Scan(pageLogJSON) {
-		var pageLog *logV1.PageLog
-		if err := protojson.Unmarshal([]byte(pageLogJSON), pageLog); err != nil {
-			return err
+	var pageState []byte
+	for {
+		q := l.selectPageLog.WithContext(stream.Context()).BindMap(qb.M{"execution_id": executionId})
+
+		// if the requested page does not overlap or is less than default pageSize (5000)
+		// set pageSize such that we fetch no more rows then needed for the request
+		if pageSize+offset <= 5000 {
+			q.PageSize(offset + pageSize)
 		}
-		err := stream.Send(pageLog)
-		if err != nil {
-			return err
+		iter := q.PageState(pageState).Iter()
+		nextPageState := iter.PageState()
+		scanner := iter.Scanner()
+	out:
+		for scanner.Next() {
+			if count < offset {
+				continue
+			}
+			var pageLogJSON string
+			if err := scanner.Scan(&pageLogJSON); err != nil {
+				_ = iter.Close()
+				return err
+			}
+			var pageLog *logV1.PageLog
+			if err := protojson.Unmarshal([]byte(pageLogJSON), pageLog); err != nil {
+				_ = iter.Close()
+				return err
+			}
+			err := stream.Send(pageLog)
+			if err != nil {
+				_ = iter.Close()
+				return err
+			}
+			count++
+			// break if we already sent the number of requested rows
+			if count >= offset+pageSize {
+				_ = iter.Close()
+				break out
+			}
 		}
+		if len(nextPageState) == 0 {
+			break
+		}
+		pageState = nextPageState
 	}
 	return nil
 }
 
 func (l *logServer) ListCrawlLogs(req *logV1.CrawlLogListRequest, stream logV1.Log_ListCrawlLogsServer) error {
-	q := l.selectCrawlLog.
-		WithContext(stream.Context()).
-		BindMap(qb.M{"execution_id": req.GetQueryTemplate().GetExecutionId()})
-	if req.GetPageSize() > 0 {
-		q = q.PageSize(int(req.PageSize))
-	}
-	defer q.Release()
+	offset := int(req.GetOffset())
+	pageSize := int(req.GetPageSize())
+	executionId := req.GetQueryTemplate().GetExecutionId()
 
-	iter := q.Iter()
-	defer func() { _ = iter.Close() }()
+	// count is the current number of rows sent to the client
+	count := 0
 
-	var jsonCrawlLog string
-	for iter.Scan(jsonCrawlLog) {
-		var crawlLog *logV1.CrawlLog
-		if err := protojson.Unmarshal([]byte(jsonCrawlLog), crawlLog); err != nil {
-			return err
+	var pageState []byte
+	for {
+		q := l.selectCrawlLog.WithContext(stream.Context()).BindMap(qb.M{"execution_id": executionId})
+
+		// if the requested page does not overlap or is less than default pageSize (5000)
+		// set pageSize such that we fetch no more rows then needed for the request
+		if pageSize+offset <= 5000 {
+			q.PageSize(offset + pageSize)
 		}
-		if err := stream.Send(crawlLog); err != nil {
-			return err
+		iter := q.PageState(pageState).Iter()
+		nextPageState := iter.PageState()
+		scanner := iter.Scanner()
+	out:
+		for scanner.Next() {
+			if count < offset {
+				continue
+			}
+			var crawlLogJson string
+			if err := scanner.Scan(&crawlLogJson); err != nil {
+				_ = iter.Close()
+				return err
+			}
+			var crawlLog *logV1.CrawlLog
+			if err := protojson.Unmarshal([]byte(crawlLogJson), crawlLog); err != nil {
+				_ = iter.Close()
+				return err
+			}
+			err := stream.Send(crawlLog)
+			if err != nil {
+				_ = iter.Close()
+				return err
+			}
+			count++
+			// break if we already sent the number of requested rows
+			if count >= offset+pageSize {
+				_ = iter.Close()
+				break out
+			}
 		}
+		if len(nextPageState) == 0 {
+			break
+		}
+		pageState = nextPageState
 	}
 	return nil
 }
