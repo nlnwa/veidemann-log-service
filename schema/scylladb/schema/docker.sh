@@ -44,3 +44,5 @@ if [ -z "$PASSWORD" ]; then
 else
   MODE="${MODE}" DATACENTER="${DATACENTER}" KEYSPACE="${KEYSPACE}" /schema/create.sh "${TEMPLATE}" | ${CQLSH} ${CQLSH_SSL} ${CQLSH_HOST} ${CQLSH_PORT} -u ${USER} -p ${PASSWORD}
 fi
+
+echo "Schema initialized"
