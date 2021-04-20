@@ -2,6 +2,7 @@ package scylla
 
 import (
 	"github.com/gocql/gocql"
+	"github.com/nlnwa/veidemann-api/go/commons/v1"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
@@ -10,6 +11,139 @@ import (
 	"io"
 	"time"
 )
+
+type ErrorUDT struct {
+	gocqlx.UDT
+	Code   int32  `cql:"code"`
+	Msg    string `cql:"msg"`
+	Detail string `cql:"detail"`
+}
+
+func (e *ErrorUDT) toProto() *commons.Error {
+	if e != nil {
+		return &commons.Error{
+			Code:   e.Code,
+			Msg:    e.Msg,
+			Detail: e.Detail,
+		}
+	}
+	return nil
+}
+
+type CrawlLog struct {
+	WarcId              string    `cql:"warc_id"`
+	TimeStamp           time.Time `cql:"time_stamp"`
+	StatusCode          int32     `cql:"status_code"`
+	Size                int64     `cql:"size"`
+	RequestedUri        string    `cql:"requested_uri"`
+	ResponseUri         string    `cql:"response_uri"`
+	DiscoveryPath       string    `cql:"discovery_path"`
+	Referrer            string    `cql:"referrer"`
+	ContentType         string    `cql:"content_type"`
+	FetchTimeStamp      time.Time `cql:"fetch_time_stamp"`
+	FetchTimeMs         int64     `cql:"fetch_time_ms"`
+	BlockDigest         string    `cql:"block_digest"`
+	PayloadDigest       string    `cql:"payload_digest"`
+	StorageRef          string    `cql:"storage_ref"`
+	RecordType          string    `cql:"record_type"`
+	WarcRefersTo        string    `cql:"warc_refers_to"`
+	IpAddress           string    `cql:"ip_address"`
+	ExecutionId         string    `cql:"execution_id"`
+	Retries             int32     `cql:"retries"`
+	Error               *ErrorUDT `cql:"error"`
+	JobExecutionId      string    `cql:"job_execution_id"`
+	CollectionFinalName string    `cql:"collection_final_name"`
+	Method              string    `cql:"method"`
+}
+
+func (c *CrawlLog) toProto() *logV1.CrawlLog {
+	return &logV1.CrawlLog{
+		WarcId:              c.WarcId,
+		TimeStamp:           timestamppb.New(c.TimeStamp),
+		StatusCode:          c.StatusCode,
+		Size:                c.Size,
+		RequestedUri:        c.RequestedUri,
+		ResponseUri:         c.ResponseUri,
+		DiscoveryPath:       c.DiscoveryPath,
+		Referrer:            c.Referrer,
+		ContentType:         c.ContentType,
+		FetchTimeStamp:      timestamppb.New(c.FetchTimeStamp),
+		FetchTimeMs:         c.FetchTimeMs,
+		BlockDigest:         c.BlockDigest,
+		PayloadDigest:       c.PayloadDigest,
+		StorageRef:          c.StorageRef,
+		RecordType:          c.RecordType,
+		WarcRefersTo:        c.WarcRefersTo,
+		IpAddress:           c.IpAddress,
+		ExecutionId:         c.ExecutionId,
+		Retries:             c.Retries,
+		Error:               c.Error.toProto(),
+		JobExecutionId:      c.JobExecutionId,
+		CollectionFinalName: c.CollectionFinalName,
+		Method:              c.Method,
+	}
+}
+
+type ResourceUDT struct {
+	gocqlx.UDT
+	Uri           string    `cql:"uri"`
+	FromCache     bool      `cql:"from_cache"`
+	Renderable    bool      `cql:"renderable"`
+	ResourceType  string    `cql:"resource_type"`
+	ContentType   string    `cql:"content_type"`
+	StatusCode    int32     `cql:"status_code"`
+	DiscoveryPath string    `cql:"discovery_path"`
+	WarcId        string    `cql:"warc_id"`
+	Referrer      string    `cql:"referrer"`
+	Error         *ErrorUDT `cql:"error"`
+	Method        string    `cql:"method"`
+}
+
+func (r *ResourceUDT) toProto() *logV1.PageLog_Resource {
+	return &logV1.PageLog_Resource{
+		Uri:           r.Uri,
+		FromCache:     r.FromCache,
+		Renderable:    r.Renderable,
+		ResourceType:  r.ResourceType,
+		ContentType:   r.ContentType,
+		StatusCode:    r.StatusCode,
+		DiscoveryPath: r.DiscoveryPath,
+		WarcId:        r.WarcId,
+		Referrer:      r.Referrer,
+		Error:         r.Error.toProto(),
+		Method:        r.Method,
+	}
+}
+
+type PageLog struct {
+	WarcId              string         `cql:"warc_id"`
+	Uri                 string         `cql:"uri"`
+	ExecutionId         string         `cql:"execution_id"`
+	Referrer            string         `cql:"referrer"`
+	JobExecutionId      string         `cql:"job_execution_id"`
+	CollectionFinalName string         `cql:"collection_final_name"`
+	Method              string         `cql:"method"`
+	Resource            []*ResourceUDT `cql:"resource"`
+	Outlink             []string       `cql:"outlink"`
+}
+
+func (p *PageLog) toProto() *logV1.PageLog {
+	var resource []*logV1.PageLog_Resource
+	for _, r := range p.Resource {
+		resource = append(resource, r.toProto())
+	}
+	return &logV1.PageLog{
+		WarcId:              p.WarcId,
+		Uri:                 p.Uri,
+		ExecutionId:         p.ExecutionId,
+		Referrer:            p.Referrer,
+		JobExecutionId:      p.JobExecutionId,
+		CollectionFinalName: p.CollectionFinalName,
+		Method:              p.Method,
+		Resource:            resource,
+		Outlink:             p.Outlink,
+	}
+}
 
 type logServer struct {
 	// logServer is a scylladb client
@@ -58,8 +192,8 @@ func (l *logServer) Connect() error {
 	// setup prepared queries
 	l.insertCrawlLog = qb.Insert("crawl_log").Json().Query(l.session)
 	l.insertPageLog = qb.Insert("page_log").Json().Query(l.session)
-	l.selectCrawlLog = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Json().Query(l.session)
-	l.selectPageLog = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Json().Query(l.session)
+	l.selectCrawlLog = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Query(l.session)
+	l.selectPageLog = qb.Select("page_log").Where(qb.Eq("execution_id")).Query(l.session)
 
 	return nil
 }
@@ -77,6 +211,26 @@ func (l *logServer) Close() {
 	close(l.pageLogMetric)
 }
 
+func writeCrawlLog(query *gocqlx.Queryx, crawlLog *logV1.CrawlLog) error {
+	// Generate nanosecond timestamp with millisecond precision.
+	// (ScyllaDB does not allow storing timestamps with better than millisecond precision)
+	ns := (time.Now().UnixNano() / 1e6) * 1e6
+	crawlLog.TimeStamp = timestamppb.New(time.Unix(0, ns))
+	// Convert fetchstimestamp to have millisecond precision
+	crawlLog.FetchTimeStamp.Nanos = crawlLog.FetchTimeStamp.Nanos - (crawlLog.FetchTimeStamp.Nanos % 1e6)
+
+	cl, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(crawlLog)
+	if err != nil {
+		return err
+	}
+
+	err = query.Bind(cl).Exec()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (l *logServer) WriteCrawlLog(stream logV1.Log_WriteCrawlLogServer) error {
 	for {
 		req, err := stream.Recv()
@@ -89,38 +243,27 @@ func (l *logServer) WriteCrawlLog(stream logV1.Log_WriteCrawlLogServer) error {
 
 		cl := req.GetCrawlLog()
 		l.crawlLogMetric <- cl
-
-		// Generate nanosecond timestamp with millisecond precision.
-		// (ScyllaDB does not allow storing timestamps with better than millisecond precision)
-		ns := (time.Now().UnixNano() / 1e6) * 1e6
-		cl.TimeStamp = timestamppb.New(time.Unix(0, ns))
-		// Convert fetchstimestamp to have millisecond precision
-		cl.FetchTimeStamp.Nanos = cl.FetchTimeStamp.Nanos - (cl.FetchTimeStamp.Nanos % 1e6)
-
-		crawlLog, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(cl)
-		if err != nil {
-			return err
-		}
-
-		err = l.insertCrawlLog.WithContext(stream.Context()).Bind(crawlLog).Exec()
-		if err != nil {
+		if err := writeCrawlLog(l.insertCrawlLog.WithContext(stream.Context()), cl); err != nil {
 			return err
 		}
 	}
 }
 
+func writePageLog(query *gocqlx.Queryx, pageLog *logV1.PageLog) error {
+	pl, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(pageLog)
+	if err != nil {
+		return err
+	}
+	return query.Bind(pl).Exec()
+}
+
 func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	pageLog := &logV1.PageLog{}
-	insert := l.insertPageLog.WithContext(stream.Context())
+	query := l.insertPageLog.WithContext(stream.Context())
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			l.pageLogMetric <- pageLog
-			pl, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(pageLog)
-			if err != nil {
-				return err
-			}
-			return insert.Bind(pl).Exec()
+			return writePageLog(query, pageLog)
 		}
 		if err != nil {
 			return err
@@ -143,112 +286,77 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	}
 }
 
-func (l *logServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log_ListPageLogsServer) error {
+func listPageLogs(query *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
 	offset := int(req.GetOffset())
 	pageSize := int(req.GetPageSize())
 	executionId := req.GetQueryTemplate().GetExecutionId()
 
-	// count is the current number of rows sent to the client
+	if len(executionId) == 0 {
+		return nil
+	}
+
+	// count is the current number of rows processed by fn
 	count := 0
 
-	var pageState []byte
-	for {
-		q := l.selectPageLog.WithContext(stream.Context()).BindMap(qb.M{"execution_id": executionId})
+	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
+	for pageLog := new(PageLog); iter.StructScan(pageLog); pageLog = new(PageLog) {
+		if count < offset {
+			continue
+		}
+		err := fn(pageLog.toProto())
+		if err != nil {
+			_ = iter.Close()
+			return err
+		}
+		count++
 
-		// if the requested page does not overlap or is less than default pageSize (5000)
-		// set pageSize such that we fetch no more rows then needed for the request
-		if pageSize+offset <= 5000 {
-			q.PageSize(offset + pageSize)
+		// stop when number of processed rows is what we requested
+		if count >= offset+pageSize {
+			_ = iter.Close()
+			return nil
 		}
-		iter := q.PageState(pageState).Iter()
-		nextPageState := iter.PageState()
-		scanner := iter.Scanner()
-	out:
-		for scanner.Next() {
-			if count < offset {
-				continue
-			}
-			var pageLogJSON string
-			if err := scanner.Scan(&pageLogJSON); err != nil {
-				_ = iter.Close()
-				return err
-			}
-			var pageLog *logV1.PageLog
-			if err := protojson.Unmarshal([]byte(pageLogJSON), pageLog); err != nil {
-				_ = iter.Close()
-				return err
-			}
-			err := stream.Send(pageLog)
-			if err != nil {
-				_ = iter.Close()
-				return err
-			}
-			count++
-			// break if we already sent the number of requested rows
-			if count >= offset+pageSize {
-				_ = iter.Close()
-				break out
-			}
-		}
-		if len(nextPageState) == 0 {
-			break
-		}
-		pageState = nextPageState
 	}
-	return nil
+	return iter.Close()
+}
+
+func (l *logServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log_ListPageLogsServer) error {
+	return listPageLogs(l.selectPageLog.WithContext(stream.Context()), req, stream.Send)
+}
+
+func listCrawlLogs(query *gocqlx.Queryx, req *logV1.CrawlLogListRequest, fn func(*logV1.CrawlLog) error) error {
+	offset := int(req.GetOffset())
+	pageSize := int(req.GetPageSize())
+	executionId := req.GetQueryTemplate().GetExecutionId()
+
+	if len(executionId) == 0 {
+		return nil
+	}
+
+	// count is the current number of rows processed by fn
+	count := 0
+
+	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
+
+	for crawlLog := new(CrawlLog); iter.StructScan(crawlLog); crawlLog = new(CrawlLog) {
+		if count < offset {
+			continue
+		}
+		err := fn(crawlLog.toProto())
+		if err != nil {
+			_ = iter.Close()
+			return err
+		}
+		count++
+
+		// stop when number of processed rows is what we requested
+		if count >= offset+pageSize {
+			_ = iter.Close()
+			return nil
+		}
+	}
+	return iter.Close()
 }
 
 func (l *logServer) ListCrawlLogs(req *logV1.CrawlLogListRequest, stream logV1.Log_ListCrawlLogsServer) error {
-	offset := int(req.GetOffset())
-	pageSize := int(req.GetPageSize())
-	executionId := req.GetQueryTemplate().GetExecutionId()
-
-	// count is the current number of rows sent to the client
-	count := 0
-
-	var pageState []byte
-	for {
-		q := l.selectCrawlLog.WithContext(stream.Context()).BindMap(qb.M{"execution_id": executionId})
-
-		// if the requested page does not overlap or is less than default pageSize (5000)
-		// set pageSize such that we fetch no more rows then needed for the request
-		if pageSize+offset <= 5000 {
-			q.PageSize(offset + pageSize)
-		}
-		iter := q.PageState(pageState).Iter()
-		nextPageState := iter.PageState()
-		scanner := iter.Scanner()
-	out:
-		for scanner.Next() {
-			if count < offset {
-				continue
-			}
-			var crawlLogJson string
-			if err := scanner.Scan(&crawlLogJson); err != nil {
-				_ = iter.Close()
-				return err
-			}
-			var crawlLog *logV1.CrawlLog
-			if err := protojson.Unmarshal([]byte(crawlLogJson), crawlLog); err != nil {
-				_ = iter.Close()
-				return err
-			}
-			err := stream.Send(crawlLog)
-			if err != nil {
-				_ = iter.Close()
-				return err
-			}
-			count++
-			// break if we already sent the number of requested rows
-			if count >= offset+pageSize {
-				_ = iter.Close()
-				break out
-			}
-		}
-		if len(nextPageState) == 0 {
-			break
-		}
-		pageState = nextPageState
-	}
-	return nil
+	return listCrawlLogs(l.selectCrawlLog.WithContext(stream.Context()), req, stream.Send)
 }
