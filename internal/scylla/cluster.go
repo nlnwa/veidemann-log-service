@@ -27,13 +27,13 @@ type Options struct {
 	Keyspace string
 }
 
-// Client can connect and talk to scylladb cluster.
+// Client is a scylla client.
 type Client struct {
 	config  *gocql.ClusterConfig
 	session gocqlx.Session
 }
 
-// Connect connects to ScyllaDB
+// Connect establishes a connection to a ScyllaDB cluster.
 func (c *Client) Connect() error {
 	session, err := gocqlx.WrapSession(gocql.NewSession(*c.config))
 	if err != nil {
