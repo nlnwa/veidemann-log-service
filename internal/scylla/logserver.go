@@ -7,6 +7,7 @@ import (
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"time"
@@ -235,7 +236,7 @@ func (l *logServer) WriteCrawlLog(stream logV1.Log_WriteCrawlLogServer) error {
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			return nil
+			return stream.SendAndClose(&emptypb.Empty{})
 		}
 		if err != nil {
 			return err
@@ -263,7 +264,10 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			return writePageLog(query, pageLog)
+			if err := writePageLog(query, pageLog); err != nil {
+				return err
+			}
+			return stream.SendAndClose(&emptypb.Empty{})
 		}
 		if err != nil {
 			return err
