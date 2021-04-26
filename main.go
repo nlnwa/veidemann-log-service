@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/nlnwa/veidemann-log-service/internal/connection"
@@ -18,6 +19,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -49,8 +51,7 @@ func main() {
 		Hosts:    viper.GetStringSlice("db-host"),
 		Keyspace: viper.GetString("db-keyspace"),
 	})
-	err = logServer.Connect()
-	if err != nil {
+	if err := logServer.Connect(); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to scylla cluster")
 	}
 	defer logServer.Close()
@@ -69,6 +70,9 @@ func main() {
 	)
 	logV1.RegisterLogServer(server.Server, logServer)
 
+	metricsServer := &http.Server{
+		Addr: fmt.Sprintf("%s:%d", viper.GetString("host"), viper.GetInt("metrics-port")),
+	}
 	go func() {
 		log.Info().
 			Str("host", viper.GetString("host")).
@@ -76,18 +80,25 @@ func main() {
 			Str("path", "/metrics").
 			Msg("Metrics server listening")
 		http.Handle("/metrics", promhttp.Handler())
-		err := http.ListenAndServe(fmt.Sprintf(":%d", viper.GetInt("metrics-port")), nil)
-		if err != http.ErrServerClosed {
-			log.Err(err).Msg("")
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("Metrics server failed")
 		}
 	}()
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		signals := make(chan os.Signal)
 		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 		select {
 		case sig := <-signals:
-			log.Debug().Msgf("Received signal: %v", sig)
+			log.Info().Str("signal", sig.String()).Msg("Shutting down")
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := metricsServer.Shutdown(ctx); err != nil {
+			log.Error().Err(err).Msg("Metrics server shutdown failure")
 		}
 		server.Shutdown()
 	}()
@@ -95,9 +106,12 @@ func main() {
 	log.Info().
 		Str("host", viper.GetString("host")).
 		Int("port", viper.GetInt("port")).
-		Msgf("gRPC server listening")
+		Msg("API server listening")
 	err = server.Serve()
 	if err != nil {
-		log.Err(err).Msg("")
+		log.Error().Err(err).Msg("API server failure")
 	}
+
+	// wait for shutdown to complete
+	<-done
 }
