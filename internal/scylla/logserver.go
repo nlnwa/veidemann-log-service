@@ -183,7 +183,7 @@ func New(options Options) *logServer {
 
 	return &logServer{
 		Client: &Client{
-			config: createCluster(gocql.Quorum, options.Keyspace, options.Hosts...),
+			config: createCluster(gocql.LocalQuorum, options.Keyspace, options.Hosts...),
 		},
 		crawlLogMetric: crawlLogMetric,
 		pageLogMetric:  pageLogMetric,
