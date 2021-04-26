@@ -251,7 +251,7 @@ func TestListPageLog(t *testing.T) {
 
 	// try to list a page log that does not exist
 	bogus := uuid.NewString()
-	if err := listPageLogs(
+	if err := listPageLogsByWarcId(
 		qb.Select("page_log").Where(qb.Eq("warc_id")).Query(session),
 		&logV1.PageLogListRequest{
 			QueryTemplate: &logV1.PageLog{
@@ -267,7 +267,7 @@ func TestListPageLog(t *testing.T) {
 	}
 
 	// Expect to find page log with known warcId
-	if err := listPageLogs(
+	if err := listPageLogsByWarcId(
 		qb.Select("page_log").Where(qb.Eq("warc_id")).Query(session),
 		&logV1.PageLogListRequest{
 			QueryTemplate: &logV1.PageLog{

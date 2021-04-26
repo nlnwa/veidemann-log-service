@@ -157,12 +157,12 @@ type logServer struct {
 	pageLogMetric  chan *logV1.PageLog
 
 	// prepared queries
-	insertCrawlLog              *gocqlx.Queryx
-	insertPageLog               *gocqlx.Queryx
-	selectCrawlLog              *gocqlx.Queryx
-	selectPageLog               *gocqlx.Queryx
-	selectCrawlLogByExecutionId *gocqlx.Queryx
-	selectPageLogByExecutionId  *gocqlx.Queryx
+	writeCrawlLog              *gocqlx.Queryx
+	writePageLog               *gocqlx.Queryx
+	listCrawlLogsByWarcId      *gocqlx.Queryx
+	listPageLogsByWarcId       *gocqlx.Queryx
+	listCrawlLogsByExecutionId *gocqlx.Queryx
+	listPageLogsByExecutionId  *gocqlx.Queryx
 }
 
 // New creates a new client with the specified address and apiKey.
@@ -198,24 +198,24 @@ func (l *logServer) Connect() error {
 	}
 
 	// setup prepared queries
-	l.insertCrawlLog = qb.Insert("crawl_log").Json().Query(l.session)
-	l.insertPageLog = qb.Insert("page_log").Json().Query(l.session)
-	l.selectPageLogByExecutionId = qb.Select("page_log").Where(qb.Eq("execution_id")).Query(l.session)
-	l.selectCrawlLogByExecutionId = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Query(l.session)
-	l.selectCrawlLog = qb.Select("crawl_log").Where(qb.Eq("warc_id")).Query(l.session)
-	l.selectPageLog = qb.Select("page_log").Where(qb.Eq("warc_id")).Query(l.session)
+	l.writeCrawlLog = qb.Insert("crawl_log").Json().Query(l.session)
+	l.writePageLog = qb.Insert("page_log").Json().Query(l.session)
+	l.listPageLogsByExecutionId = qb.Select("page_log").Where(qb.Eq("execution_id")).Query(l.session)
+	l.listCrawlLogsByExecutionId = qb.Select("crawl_log").Where(qb.Eq("execution_id")).Query(l.session)
+	l.listCrawlLogsByWarcId = qb.Select("crawl_log").Where(qb.Eq("warc_id")).Query(l.session)
+	l.listPageLogsByWarcId = qb.Select("page_log").Where(qb.Eq("warc_id")).Query(l.session)
 
 	return nil
 }
 
 // Close closes the connection to database session
 func (l *logServer) Close() {
-	l.insertCrawlLog.Release()
-	l.insertPageLog.Release()
-	l.selectCrawlLog.Release()
-	l.selectPageLog.Release()
-	l.selectCrawlLogByExecutionId.Release()
-	l.selectPageLogByExecutionId.Release()
+	l.writeCrawlLog.Release()
+	l.writePageLog.Release()
+	l.listCrawlLogsByWarcId.Release()
+	l.listPageLogsByWarcId.Release()
+	l.listCrawlLogsByExecutionId.Release()
+	l.listPageLogsByExecutionId.Release()
 	l.session.Close()
 
 	close(l.crawlLogMetric)
@@ -234,7 +234,7 @@ func (l *logServer) WriteCrawlLog(stream logV1.Log_WriteCrawlLogServer) error {
 
 		cl := req.GetCrawlLog()
 		l.crawlLogMetric <- cl
-		if err := writeCrawlLog(l.insertCrawlLog.WithContext(stream.Context()), cl); err != nil {
+		if err := writeCrawlLog(l.writeCrawlLog.WithContext(stream.Context()), cl); err != nil {
 			return err
 		}
 	}
@@ -265,7 +265,7 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			if err := writePageLog(l.insertPageLog.WithContext(stream.Context()), pageLog); err != nil {
+			if err := writePageLog(l.writePageLog.WithContext(stream.Context()), pageLog); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&emptypb.Empty{})
@@ -301,27 +301,22 @@ func writePageLog(query *gocqlx.Queryx, pageLog *logV1.PageLog) error {
 
 func (l *logServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log_ListPageLogsServer) error {
 	if len(req.GetWarcId()) > 0 {
-		return listPageLogs(l.selectPageLog.WithContext(stream.Context()), req, stream.Send)
+		return listPageLogsByWarcId(l.listPageLogsByWarcId.WithContext(stream.Context()), req, stream.Send)
 	}
 	if len(req.GetQueryTemplate().GetExecutionId()) > 0 {
-		return listPageLogsByExecutionId(l.selectPageLogByExecutionId.WithContext(stream.Context()), req, stream.Send)
+		return listPageLogsByExecutionId(l.listPageLogsByExecutionId.WithContext(stream.Context()), req, stream.Send)
 	}
 	return fmt.Errorf("request must provide warcId or executionId")
 }
 
-// listPageLogs lists page logs by warcId
-func listPageLogs(query *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
+// listPageLogsByWarcId lists page logs by warcId
+func listPageLogsByWarcId(query *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
 	for _, warcId := range req.GetWarcId() {
-		iter := query.BindMap(qb.M{"warc_id": warcId}).Iter()
 		pageLog := new(PageLog)
-		if iter.StructScan(pageLog) {
-			err := fn(pageLog.toProto())
-			if err != nil {
-				_ = iter.Close()
-				return err
-			}
+		if err := query.BindMap(qb.M{"warc_id": warcId}).Get(pageLog); err != nil {
+			return err
 		}
-		if err := iter.Close(); err != nil {
+		if err := fn(pageLog.toProto()); err != nil {
 			return err
 		}
 	}
@@ -333,13 +328,8 @@ func listPageLogsByExecutionId(query *gocqlx.Queryx, req *logV1.PageLogListReque
 	pageSize := int(req.GetPageSize())
 	executionId := req.GetQueryTemplate().GetExecutionId()
 
-	if len(executionId) == 0 {
-		return nil
-	}
-
 	// count is the current number of rows processed by fn
 	count := 0
-
 	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
 	for pageLog := new(PageLog); iter.StructScan(pageLog); pageLog = new(PageLog) {
 		if count < offset {
@@ -350,7 +340,7 @@ func listPageLogsByExecutionId(query *gocqlx.Queryx, req *logV1.PageLogListReque
 			_ = iter.Close()
 			return err
 		}
-		if offset + pageSize == 0 {
+		if offset+pageSize == 0 {
 			continue
 		}
 		count++
@@ -365,27 +355,22 @@ func listPageLogsByExecutionId(query *gocqlx.Queryx, req *logV1.PageLogListReque
 
 func (l *logServer) ListCrawlLogs(req *logV1.CrawlLogListRequest, stream logV1.Log_ListCrawlLogsServer) error {
 	if len(req.GetWarcId()) > 0 {
-		return listCrawlLogs(l.selectPageLog.WithContext(stream.Context()), req, stream.Send)
+		return listCrawlLogsByWarcId(l.listCrawlLogsByWarcId.WithContext(stream.Context()), req, stream.Send)
 	}
 	if len(req.GetQueryTemplate().GetExecutionId()) > 0 {
-		return listCrawlLogsByExecutionId(l.selectPageLog.WithContext(stream.Context()), req, stream.Send)
+		return listCrawlLogsByExecutionId(l.listCrawlLogsByExecutionId.WithContext(stream.Context()), req, stream.Send)
 	}
 	return fmt.Errorf("request must provide warcId or executionId")
 }
 
-// listPageLogs lists page logs by warcId
-func listCrawlLogs(query *gocqlx.Queryx, req *logV1.CrawlLogListRequest, fn func(*logV1.CrawlLog) error) error {
+// listPageLogsByWarcId lists page logs by warcId
+func listCrawlLogsByWarcId(query *gocqlx.Queryx, req *logV1.CrawlLogListRequest, fn func(*logV1.CrawlLog) error) error {
 	for _, warcId := range req.GetWarcId() {
-		iter := query.BindMap(qb.M{"warc_id": warcId}).Iter()
 		crawlLog := new(CrawlLog)
-		if iter.StructScan(crawlLog) {
-			err := fn(crawlLog.toProto())
-			if err != nil {
-				_ = iter.Close()
-				return err
-			}
+		if err := query.BindMap(qb.M{"warc_id": warcId}).Get(crawlLog); err != nil {
+			return err
 		}
-		if err := iter.Close(); err != nil {
+		if err := fn(crawlLog.toProto()); err != nil {
 			return err
 		}
 	}
@@ -397,15 +382,10 @@ func listCrawlLogsByExecutionId(query *gocqlx.Queryx, req *logV1.CrawlLogListReq
 	pageSize := int(req.GetPageSize())
 	executionId := req.GetQueryTemplate().GetExecutionId()
 
-	if len(executionId) == 0 {
-		return nil
-	}
-
 	// count is the current number of rows processed by fn
 	count := 0
 
 	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
-
 	for crawlLog := new(CrawlLog); iter.StructScan(crawlLog); crawlLog = new(CrawlLog) {
 		if count < offset {
 			continue
@@ -415,9 +395,11 @@ func listCrawlLogsByExecutionId(query *gocqlx.Queryx, req *logV1.CrawlLogListReq
 			_ = iter.Close()
 			return err
 		}
+		if offset+pageSize == 0 {
+			continue
+		}
 		count++
-
-		// stop when number of processed rows is what we requested
+		// stop when number of processed rows equals what we requested
 		if count >= offset+pageSize {
 			_ = iter.Close()
 			return nil
