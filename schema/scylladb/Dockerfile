@@ -1,4 +1,4 @@
-FROM scylladb/scylla:4.3.0
+FROM scylladb/scylla:4.4.1
 
 COPY schema/* /schema/
 
