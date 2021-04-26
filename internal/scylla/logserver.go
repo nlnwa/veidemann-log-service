@@ -253,7 +253,7 @@ func writeCrawlLog(query *gocqlx.Queryx, crawlLog *logV1.CrawlLog) error {
 		return err
 	}
 
-	err = query.Bind(cl).ExecRelease()
+	err = query.Bind(cl).Exec()
 	if err != nil {
 		return err
 	}
@@ -262,11 +262,10 @@ func writeCrawlLog(query *gocqlx.Queryx, crawlLog *logV1.CrawlLog) error {
 
 func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	pageLog := &logV1.PageLog{}
-	query := l.insertPageLog.WithContext(stream.Context())
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			if err := writePageLog(query, pageLog); err != nil {
+			if err := writePageLog(l.insertPageLog.WithContext(stream.Context()), pageLog); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&emptypb.Empty{})
@@ -297,7 +296,7 @@ func writePageLog(query *gocqlx.Queryx, pageLog *logV1.PageLog) error {
 	if err != nil {
 		return err
 	}
-	return query.Bind(pl).ExecRelease()
+	return query.Bind(pl).Exec()
 }
 
 func (l *logServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log_ListPageLogsServer) error {
