@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 	scyllaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "scylladb/scylla:4.4.1",
-			ExposedPorts: []string{"9042/tcp"},
+			ExposedPorts: []string{"9042/tcp", "19042/tcp"},
 			Networks:     []string{networkName},
 			NetworkAliases: map[string][]string{
 				networkName: {"scylla"},
@@ -66,7 +66,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	cfg := createCluster(gocql.Quorum, "v7n_v1_dc1", "localhost")
+	cfg := createCluster(gocql.LocalQuorum, "v7n_v1_dc1", "localhost")
 	cfg.Port = cqlshPort.Int()
 	client := &Client{config: cfg}
 
