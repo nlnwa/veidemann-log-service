@@ -304,7 +304,7 @@ func (l *logServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log
 		return listPageLogs(l.selectPageLog.WithContext(stream.Context()), req, stream.Send)
 	}
 	if len(req.GetQueryTemplate().GetExecutionId()) > 0 {
-		return listPageLogsByExecutionId(l.selectPageLog.WithContext(stream.Context()), req, stream.Send)
+		return listPageLogsByExecutionId(l.selectPageLogByExecutionId.WithContext(stream.Context()), req, stream.Send)
 	}
 	return fmt.Errorf("request must provide warcId or executionId")
 }
