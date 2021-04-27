@@ -333,6 +333,7 @@ func listPageLogsByExecutionId(query *gocqlx.Queryx, req *logV1.PageLogListReque
 	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
 	for pageLog := new(PageLog); iter.StructScan(pageLog); pageLog = new(PageLog) {
 		if count < offset {
+			count++
 			continue
 		}
 		err := fn(pageLog.toProto())
@@ -388,6 +389,7 @@ func listCrawlLogsByExecutionId(query *gocqlx.Queryx, req *logV1.CrawlLogListReq
 	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
 	for crawlLog := new(CrawlLog); iter.StructScan(crawlLog); crawlLog = new(CrawlLog) {
 		if count < offset {
+			count++
 			continue
 		}
 		err := fn(crawlLog.toProto())
