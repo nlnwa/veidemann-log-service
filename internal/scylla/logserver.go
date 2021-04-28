@@ -265,6 +265,7 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
+			l.pageLogMetric <- pageLog
 			if err := writePageLog(l.writePageLog.WithContext(stream.Context()), pageLog); err != nil {
 				return err
 			}
