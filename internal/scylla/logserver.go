@@ -7,6 +7,7 @@ import (
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -235,6 +236,7 @@ func (l *logServer) WriteCrawlLog(stream logV1.Log_WriteCrawlLogServer) error {
 		cl := req.GetCrawlLog()
 		l.crawlLogMetric <- cl
 		if err := writeCrawlLog(l.writeCrawlLog.WithContext(stream.Context()), cl); err != nil {
+			log.Error().Err(err).Msg("Error writing crawl log")
 			return err
 		}
 	}
@@ -267,6 +269,7 @@ func (l *logServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 		if err == io.EOF {
 			l.pageLogMetric <- pageLog
 			if err := writePageLog(l.writePageLog.WithContext(stream.Context()), pageLog); err != nil {
+				log.Error().Err(err).Msg("Error writing page log")
 				return err
 			}
 			return stream.SendAndClose(&emptypb.Empty{})
