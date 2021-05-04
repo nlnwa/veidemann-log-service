@@ -14,54 +14,44 @@
  * limitations under the License.
  */
 
-package logclient
+package logservice
 
 import (
 	"context"
-	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"io"
+
+	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 )
 
-type LogClient struct {
-	*Connection
+type LogWriter struct {
 	logV1.LogClient
 }
 
-func New(opts ...Option) *LogClient {
-	return &LogClient{
-		Connection: NewConnection("LogClient", opts...),
-	}
+func (l *LogWriter) WriteCrawlLog(ctx context.Context, crawlLog *logV1.CrawlLog) error {
+	return l.WriteCrawlLogs(ctx, []*logV1.CrawlLog{crawlLog})
 }
 
-func (l *LogClient) Connect() error {
-	if conn, err := l.Dial(); err != nil {
-		return err
-	} else {
-		l.LogClient = logV1.NewLogClient(conn)
-		return nil
-	}
-}
-
-func (l *LogClient) WriteCrawlLogs(ctx context.Context, crawlLogs []*logV1.CrawlLog) error {
+func (l *LogWriter) WriteCrawlLogs(ctx context.Context, crawlLogs []*logV1.CrawlLog) error {
 	stream, err := l.LogClient.WriteCrawlLog(ctx)
 	if err != nil {
 		return err
 	}
 	for _, crawlLog := range crawlLogs {
 		req := &logV1.WriteCrawlLogRequest{CrawlLog: crawlLog}
-		err := stream.Send(req)
-		if err != nil {
+		if err := stream.Send(req); err != nil {
+			if err == io.EOF {
+				_, err = stream.CloseAndRecv()
+			}
 			return err
 		}
 	}
-	_, err = stream.CloseAndRecv()
-	if err != io.EOF {
+	if _, err = stream.CloseAndRecv(); err != io.EOF {
 		return err
 	}
 	return nil
 }
 
-func (l *LogClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) error {
+func (l *LogWriter) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) error {
 	stream, err := l.LogClient.WritePageLog(ctx)
 	if err != nil {
 		return err
@@ -81,6 +71,9 @@ func (l *LogClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) er
 		},
 	}
 	if err := stream.Send(metadata); err != nil {
+		if err == io.EOF {
+			_, err = stream.CloseAndRecv()
+		}
 		return err
 	}
 	// send resources
@@ -89,6 +82,9 @@ func (l *LogClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) er
 			Value: &logV1.WritePageLogRequest_Resource{Resource: resource},
 		}
 		if err := stream.Send(req); err != nil {
+			if err == io.EOF {
+				_, err = stream.CloseAndRecv()
+			}
 			return err
 		}
 	}
@@ -98,13 +94,15 @@ func (l *LogClient) WritePageLog(ctx context.Context, pageLog *logV1.PageLog) er
 			Value: &logV1.WritePageLogRequest_Outlink{Outlink: outlink},
 		}
 		if err := stream.Send(req); err != nil {
+			if err == io.EOF {
+				_, err = stream.CloseAndRecv()
+			}
 			return err
 		}
 	}
 
-	_, err = stream.CloseAndRecv()
-	if err == io.EOF {
-		return nil
+	if _, err = stream.CloseAndRecv(); err != io.EOF {
+		return err
 	}
-	return err
+	return nil
 }

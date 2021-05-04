@@ -1,13 +1,28 @@
+/*
+ * Copyright 2021 National Library of Norway.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package scylla
 
 import (
-	"fmt"
 	"github.com/gocql/gocql"
 	"github.com/scylladb/gocqlx/v2"
 	"time"
 )
 
-func createCluster(consistency gocql.Consistency, keyspace string, hosts ...string) *gocql.ClusterConfig {
+func CreateCluster(consistency gocql.Consistency, keyspace string, hosts ...string) *gocql.ClusterConfig {
 	retryPolicy := &gocql.ExponentialBackoffRetryPolicy{
 		Min:        time.Second,
 		Max:        10 * time.Second,
@@ -22,29 +37,7 @@ func createCluster(consistency gocql.Consistency, keyspace string, hosts ...stri
 	return cluster
 }
 
-type Options struct {
-	Hosts    []string
-	Keyspace string
-}
-
-// Client is a scylla client.
-type Client struct {
-	config  *gocql.ClusterConfig
-	session gocqlx.Session
-}
-
 // Connect establishes a connection to a ScyllaDB cluster.
-func (c *Client) Connect() error {
-	session, err := gocqlx.WrapSession(gocql.NewSession(*c.config))
-	if err != nil {
-		return fmt.Errorf("failed to connect to scylla: %w", err)
-	}
-	c.session = session
-
-	return nil
-}
-
-// Close closes the database session
-func (c *Client) Close() {
-	c.session.Close()
+func Connect(config *gocql.ClusterConfig) (gocqlx.Session, error) {
+	return gocqlx.WrapSession(gocql.NewSession(*config))
 }
