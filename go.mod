@@ -15,6 +15,8 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.1
 	github.com/testcontainers/testcontainers-go v0.10.0
+	github.com/uber/jaeger-client-go v2.27.0+incompatible
+	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	google.golang.org/grpc v1.33.2
 	google.golang.org/protobuf v1.26.0
 )
