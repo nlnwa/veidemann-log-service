@@ -3,9 +3,8 @@ module github.com/nlnwa/veidemann-log-service
 go 1.16
 
 require (
-	github.com/bketelsen/crypt v0.0.3-0.20200106085610-5cbc8cc4026c // indirect
+	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
-	github.com/coreos/bbolt v1.3.2 // indirect
 	github.com/gocql/gocql v0.0.0-20210817081954-bc256bbb90de
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.2.0
@@ -15,10 +14,8 @@ require (
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.31.1
 	github.com/prometheus/procfs v0.7.3 // indirect
-	github.com/prometheus/tsdb v0.7.1 // indirect
 	github.com/rs/zerolog v1.25.0
 	github.com/scylladb/gocqlx/v2 v2.4.0
-	github.com/smartystreets/goconvey v1.6.4 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.9.0
 	github.com/testcontainers/testcontainers-go v0.10.0
