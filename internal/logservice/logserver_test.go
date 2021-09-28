@@ -64,6 +64,9 @@ func TestMain(m *testing.M) {
 			Image:      "norsknettarkiv/veidemann-log-schema:2.0.0",
 			AutoRemove: true,
 			Networks:   []string{networkName},
+			Env:        map[string]string{
+				"CQLSH_HOST": "scylla",
+			},
 			WaitingFor: wait.ForLog("Schema initialized"),
 		},
 		Started: true,
@@ -83,7 +86,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	cfg := scylla.CreateCluster(gocql.LocalQuorum, "v7n_v1_dc1", cqlshHost)
+	cfg := scylla.CreateCluster(gocql.LocalQuorum, "v7n_v2_dc1", cqlshHost)
 	cfg.Port = cqlshPort.Int()
 
 	session, err = scylla.Connect(cfg)
