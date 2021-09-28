@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 
 	scyllaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "scylladb/scylla:4.4.1",
+			Image:        "scylladb/scylla:4.4.4",
 			ExposedPorts: []string{"9042/tcp", "19042/tcp"},
 			Networks:     []string{networkName},
 			NetworkAliases: map[string][]string{
@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 
 	if _, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "norsknettarkiv/veidemann-log-schema:v1.0.0",
+			Image:      "norsknettarkiv/veidemann-log-schema:2.0.0",
 			AutoRemove: true,
 			Networks:   []string{networkName},
 			WaitingFor: wait.ForLog("Schema initialized"),
