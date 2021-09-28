@@ -1,11 +1,11 @@
-FROM golang:1.15 as build
+FROM golang:1.16 as build
 
 WORKDIR /build
 
 COPY go.mod .
 COPY go.sum .
 
-RUN go mod download
+RUN GOPROXY=proxy.golang.org go mod download
 
 COPY . .
 
