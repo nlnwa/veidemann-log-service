@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 
 	if _, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "norsknettarkiv/veidemann-log-schema:2.0.0",
+			Image:      "ghcr.io/nlnwa/veidemann-log-schema:2.0.0",
 			AutoRemove: true,
 			Networks:   []string{networkName},
 			Env:        map[string]string{
