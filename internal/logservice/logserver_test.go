@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 
 	scyllaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "scylladb/scylla:4.4.1",
+			Image:        "scylladb/scylla:4.4.4",
 			ExposedPorts: []string{"9042/tcp", "19042/tcp"},
 			Networks:     []string{networkName},
 			NetworkAliases: map[string][]string{
@@ -61,9 +61,12 @@ func TestMain(m *testing.M) {
 
 	if _, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "norsknettarkiv/veidemann-log-schema:v1.0.0",
+			Image:      "ghcr.io/nlnwa/veidemann-log-schema:2.0.0",
 			AutoRemove: true,
 			Networks:   []string{networkName},
+			Env:        map[string]string{
+				"CQLSH_HOST": "scylla",
+			},
 			WaitingFor: wait.ForLog("Schema initialized"),
 		},
 		Started: true,
@@ -83,7 +86,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	cfg := scylla.CreateCluster(gocql.LocalQuorum, "v7n_v1_dc1", cqlshHost)
+	cfg := scylla.CreateCluster(gocql.LocalQuorum, "v7n_v2_dc1", cqlshHost)
 	cfg.Port = cqlshPort.Int()
 
 	session, err = scylla.Connect(cfg)
