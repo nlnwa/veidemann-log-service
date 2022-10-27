@@ -1,11 +1,11 @@
-FROM golang:1.16 as build
+FROM golang:1.18 as build
 
 WORKDIR /build
 
 COPY go.mod .
 COPY go.sum .
 
-RUN GOPROXY=proxy.golang.org go mod download
+RUN go mod download
 
 COPY . .
 
@@ -15,7 +15,7 @@ COPY . .
 #   -w disable DWARF generation
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" .
 
-FROM gcr.io/distroless/base
+FROM gcr.io/distroless/base-debian11
 COPY --from=build /build/veidemann-log-service /
 
 # api server
