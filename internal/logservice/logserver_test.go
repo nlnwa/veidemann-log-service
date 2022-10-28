@@ -37,6 +37,7 @@ func TestMain(m *testing.M) {
 		NetworkRequest: testcontainers.NetworkRequest{
 			Name:           networkName,
 			CheckDuplicate: true,
+			SkipReaper:     true,
 		},
 	})
 	if err != nil {
@@ -45,12 +46,13 @@ func TestMain(m *testing.M) {
 
 	scyllaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "scylladb/scylla:4.4.4",
+			Image:        "scylladb/scylla:4.6.9",
 			ExposedPorts: []string{"9042/tcp", "19042/tcp"},
 			Networks:     []string{networkName},
 			NetworkAliases: map[string][]string{
 				networkName: {"scylla"},
 			},
+			SkipReaper: true,
 			WaitingFor: wait.ForListeningPort("9042/tcp"),
 		},
 		Started: true,
@@ -64,7 +66,8 @@ func TestMain(m *testing.M) {
 			Image:      "ghcr.io/nlnwa/veidemann-log-schema:2.0.0",
 			AutoRemove: true,
 			Networks:   []string{networkName},
-			Env:        map[string]string{
+			SkipReaper: true,
+			Env: map[string]string{
 				"CQLSH_HOST": "scylla",
 			},
 			WaitingFor: wait.ForLog("Schema initialized"),
@@ -94,7 +97,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	logServer = New(session, 2, 5)
+	logServer = New(session, 2, 5, 1)
 
 	srv := grpc.NewServer()
 	logV1.RegisterLogServer(srv, logServer)
@@ -338,7 +341,7 @@ func assertEqualCrawlLogs(t *testing.T, expected *logV1.CrawlLog, got *logV1.Cra
 	}
 }
 
-// truncate truncates the contents of given table and waits for it to take effect.
+// truncate the contents of given table and wait for it to take effect.
 func truncate(table string) error {
 	if err := session.ExecStmt(fmt.Sprintf("TRUNCATE %s", table)); err != nil {
 		return err

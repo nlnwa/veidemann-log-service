@@ -18,6 +18,7 @@ package logservice
 
 import (
 	"fmt"
+	"github.com/gocql/gocql"
 	"github.com/nlnwa/veidemann-api/go/commons/v1"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/scylladb/gocqlx/v2"
@@ -174,7 +175,7 @@ type LogServer struct {
 	listPageLogsByExecutionId  *Pool
 }
 
-func New(session gocqlx.Session, readPoolSize int, writePoolSize int) *LogServer {
+func New(session gocqlx.Session, readPoolSize int, writePoolSize int, readConsistency gocql.Consistency) *LogServer {
 	return &LogServer{
 		insertCrawlLog: NewPool(writePoolSize, func() *gocqlx.Queryx {
 			return qb.Insert("crawl_log").Json().Query(session)
@@ -183,16 +184,16 @@ func New(session gocqlx.Session, readPoolSize int, writePoolSize int) *LogServer
 			return qb.Insert("page_log").Json().Query(session)
 		}),
 		listPageLogsByExecutionId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("page_log").Where(qb.Eq("execution_id")).Query(session)
+			return qb.Select("page_log").Where(qb.Eq("execution_id")).Query(session).Consistency(readConsistency)
 		}),
 		listCrawlLogsByExecutionId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("crawl_log").Where(qb.Eq("execution_id")).Query(session)
+			return qb.Select("crawl_log").Where(qb.Eq("execution_id")).Query(session).Consistency(readConsistency)
 		}),
 		listPageLogsByWarcId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("page_log").Where(qb.Eq("warc_id")).Query(session)
+			return qb.Select("page_log").Where(qb.Eq("warc_id")).Query(session).Consistency(readConsistency)
 		}),
 		listCrawlLogsByWarcId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("crawl_log").Where(qb.Eq("warc_id")).Query(session)
+			return qb.Select("crawl_log").Where(qb.Eq("warc_id")).Query(session).Consistency(readConsistency)
 		}),
 	}
 }

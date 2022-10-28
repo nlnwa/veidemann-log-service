@@ -49,7 +49,8 @@ func main() {
 
 	pflag.StringSlice("db-host", []string{"localhost"}, "List of db hosts")
 	pflag.String("db-keyspace", "", "Name of keyspace")
-	pflag.String("db-consistency", "local_quorum", "Name of keyspace")
+	pflag.String("db-consistency", "local_quorum", "Write consistency")
+	pflag.String("db-read-consistency", "one", "Read consistency")
 
 	pflag.Int("read-query-pool-size", 3, "Number of prepared statements in read pools")
 	pflag.Int("write-query-pool-size", 10, "Number of prepared statements in write pools")
@@ -92,7 +93,12 @@ func main() {
 	} else {
 		defer session.Close()
 
-		logServer := logservice.New(session, viper.GetInt("read-query-pool-size"), viper.GetInt("write-query-pool-size"))
+		logServer := logservice.New(
+			session,
+			viper.GetInt("read-query-pool-size"),
+			viper.GetInt("write-query-pool-size"),
+			gocql.ParseConsistency(viper.GetString("db-read-consistency")),
+		)
 		logV1.RegisterLogServer(server, logServer)
 		defer logServer.Close()
 	}
@@ -119,7 +125,7 @@ func main() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		signals := make(chan os.Signal)
+		signals := make(chan os.Signal, 2)
 		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 		select {
 		case sig := <-signals:
