@@ -33,10 +33,8 @@ CREATE TABLE IF NOT EXISTS ${keyspace}.resource (
     renderable      boolean,
     status_code     int,
     error           frozen<error>,
-    PRIMARY KEY (warc_id),
+    PRIMARY KEY (page_id, warc_id),
 );
-
-CREATE INDEX IF NOT EXISTS ON ${keyspace}.resource (page_id);
 
 CREATE TABLE IF NOT EXISTS ${keyspace}.page_log (
     warc_id                 uuid,
