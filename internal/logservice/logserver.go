@@ -17,151 +17,25 @@
 package logservice
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"time"
+
 	"github.com/gocql/gocql"
-	"github.com/nlnwa/veidemann-api/go/commons/v1"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"io"
-	"time"
 )
 
-type ErrorUDT struct {
-	gocqlx.UDT
-	Code   int32  `cql:"code"`
-	Msg    string `cql:"msg"`
-	Detail string `cql:"detail"`
-}
-
-func (e *ErrorUDT) toProto() *commons.Error {
-	if e != nil {
-		return &commons.Error{
-			Code:   e.Code,
-			Msg:    e.Msg,
-			Detail: e.Detail,
-		}
-	}
-	return nil
-}
-
-type CrawlLog struct {
-	WarcId              string    `cql:"warc_id"`
-	TimeStamp           time.Time `cql:"time_stamp"`
-	StatusCode          int32     `cql:"status_code"`
-	Size                int64     `cql:"size"`
-	RequestedUri        string    `cql:"requested_uri"`
-	ResponseUri         string    `cql:"response_uri"`
-	DiscoveryPath       string    `cql:"discovery_path"`
-	Referrer            string    `cql:"referrer"`
-	ContentType         string    `cql:"content_type"`
-	FetchTimeStamp      time.Time `cql:"fetch_time_stamp"`
-	FetchTimeMs         int64     `cql:"fetch_time_ms"`
-	BlockDigest         string    `cql:"block_digest"`
-	PayloadDigest       string    `cql:"payload_digest"`
-	StorageRef          string    `cql:"storage_ref"`
-	RecordType          string    `cql:"record_type"`
-	WarcRefersTo        string    `cql:"warc_refers_to"`
-	IpAddress           string    `cql:"ip_address"`
-	ExecutionId         string    `cql:"execution_id"`
-	Retries             int32     `cql:"retries"`
-	Error               *ErrorUDT `cql:"error"`
-	JobExecutionId      string    `cql:"job_execution_id"`
-	CollectionFinalName string    `cql:"collection_final_name"`
-	Method              string    `cql:"method"`
-}
-
-func (c *CrawlLog) toProto() *logV1.CrawlLog {
-	return &logV1.CrawlLog{
-		WarcId:              c.WarcId,
-		TimeStamp:           timestamppb.New(c.TimeStamp),
-		StatusCode:          c.StatusCode,
-		Size:                c.Size,
-		RequestedUri:        c.RequestedUri,
-		ResponseUri:         c.ResponseUri,
-		DiscoveryPath:       c.DiscoveryPath,
-		Referrer:            c.Referrer,
-		ContentType:         c.ContentType,
-		FetchTimeStamp:      timestamppb.New(c.FetchTimeStamp),
-		FetchTimeMs:         c.FetchTimeMs,
-		BlockDigest:         c.BlockDigest,
-		PayloadDigest:       c.PayloadDigest,
-		StorageRef:          c.StorageRef,
-		RecordType:          c.RecordType,
-		WarcRefersTo:        c.WarcRefersTo,
-		IpAddress:           c.IpAddress,
-		ExecutionId:         c.ExecutionId,
-		Retries:             c.Retries,
-		Error:               c.Error.toProto(),
-		JobExecutionId:      c.JobExecutionId,
-		CollectionFinalName: c.CollectionFinalName,
-		Method:              c.Method,
-	}
-}
-
-type ResourceUDT struct {
-	gocqlx.UDT
-	Uri           string    `cql:"uri"`
-	FromCache     bool      `cql:"from_cache"`
-	Renderable    bool      `cql:"renderable"`
-	ResourceType  string    `cql:"resource_type"`
-	ContentType   string    `cql:"content_type"`
-	StatusCode    int32     `cql:"status_code"`
-	DiscoveryPath string    `cql:"discovery_path"`
-	WarcId        string    `cql:"warc_id"`
-	Referrer      string    `cql:"referrer"`
-	Error         *ErrorUDT `cql:"error"`
-	Method        string    `cql:"method"`
-}
-
-func (r *ResourceUDT) toProto() *logV1.PageLog_Resource {
-	return &logV1.PageLog_Resource{
-		Uri:           r.Uri,
-		FromCache:     r.FromCache,
-		Renderable:    r.Renderable,
-		ResourceType:  r.ResourceType,
-		ContentType:   r.ContentType,
-		StatusCode:    r.StatusCode,
-		DiscoveryPath: r.DiscoveryPath,
-		WarcId:        r.WarcId,
-		Referrer:      r.Referrer,
-		Error:         r.Error.toProto(),
-		Method:        r.Method,
-	}
-}
-
-type PageLog struct {
-	WarcId              string         `cql:"warc_id"`
-	Uri                 string         `cql:"uri"`
-	ExecutionId         string         `cql:"execution_id"`
-	Referrer            string         `cql:"referrer"`
-	JobExecutionId      string         `cql:"job_execution_id"`
-	CollectionFinalName string         `cql:"collection_final_name"`
-	Method              string         `cql:"method"`
-	Resource            []*ResourceUDT `cql:"resource"`
-	Outlink             []string       `cql:"outlink"`
-}
-
-func (p *PageLog) toProto() *logV1.PageLog {
-	var resource []*logV1.PageLog_Resource
-	for _, r := range p.Resource {
-		resource = append(resource, r.toProto())
-	}
-	return &logV1.PageLog{
-		WarcId:              p.WarcId,
-		Uri:                 p.Uri,
-		ExecutionId:         p.ExecutionId,
-		Referrer:            p.Referrer,
-		JobExecutionId:      p.JobExecutionId,
-		CollectionFinalName: p.CollectionFinalName,
-		Method:              p.Method,
-		Resource:            resource,
-		Outlink:             p.Outlink,
-	}
-}
+const (
+	TableCrawlLog = "crawl_log"
+	TablePageLog  = "page_log"
+	TableResource = "resource"
+)
 
 type LogServer struct {
 	logV1.UnimplementedLogServer
@@ -169,8 +43,10 @@ type LogServer struct {
 	// pool of prepared queries
 	insertCrawlLog             *Pool
 	insertPageLog              *Pool
+	insertResource             *Pool
 	listCrawlLogsByWarcId      *Pool
 	listPageLogsByWarcId       *Pool
+	listResourcesByPageId      *Pool
 	listCrawlLogsByExecutionId *Pool
 	listPageLogsByExecutionId  *Pool
 }
@@ -178,22 +54,28 @@ type LogServer struct {
 func New(session gocqlx.Session, readPoolSize int, writePoolSize int, readConsistency gocql.Consistency) *LogServer {
 	return &LogServer{
 		insertCrawlLog: NewPool(writePoolSize, func() *gocqlx.Queryx {
-			return qb.Insert("crawl_log").Json().Query(session)
+			return qb.Insert(TableCrawlLog).Json().Query(session)
 		}),
 		insertPageLog: NewPool(writePoolSize, func() *gocqlx.Queryx {
-			return qb.Insert("page_log").Json().Query(session)
+			return qb.Insert(TablePageLog).Json().Query(session)
+		}),
+		insertResource: NewPool(writePoolSize, func() *gocqlx.Queryx {
+			return qb.Insert(TableResource).Json().Query(session)
+		}),
+		listResourcesByPageId: NewPool(readPoolSize, func() *gocqlx.Queryx {
+			return qb.Select(TableResource).Where(qb.Eq("page_id")).Query(session).Consistency(readConsistency)
 		}),
 		listPageLogsByExecutionId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("page_log").Where(qb.Eq("execution_id")).Query(session).Consistency(readConsistency)
+			return qb.Select(TablePageLog).Where(qb.Eq("execution_id")).Query(session).Consistency(readConsistency)
 		}),
 		listCrawlLogsByExecutionId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("crawl_log").Where(qb.Eq("execution_id")).Query(session).Consistency(readConsistency)
+			return qb.Select(TableCrawlLog).Where(qb.Eq("execution_id")).Query(session).Consistency(readConsistency)
 		}),
 		listPageLogsByWarcId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("page_log").Where(qb.Eq("warc_id")).Query(session).Consistency(readConsistency)
+			return qb.Select(TablePageLog).Where(qb.Eq("warc_id")).Query(session).Consistency(readConsistency)
 		}),
 		listCrawlLogsByWarcId: NewPool(readPoolSize, func() *gocqlx.Queryx {
-			return qb.Select("crawl_log").Where(qb.Eq("warc_id")).Query(session).Consistency(readConsistency)
+			return qb.Select(TableCrawlLog).Where(qb.Eq("warc_id")).Query(session).Consistency(readConsistency)
 		}),
 	}
 }
@@ -202,6 +84,8 @@ func New(session gocqlx.Session, readPoolSize int, writePoolSize int, readConsis
 func (l *LogServer) Close() {
 	l.insertCrawlLog.Drain()
 	l.insertPageLog.Drain()
+	l.insertResource.Drain()
+	l.listResourcesByPageId.Drain()
 	l.listCrawlLogsByWarcId.Drain()
 	l.listPageLogsByWarcId.Drain()
 	l.listCrawlLogsByExecutionId.Drain()
@@ -249,13 +133,20 @@ func writeCrawlLog(query *gocqlx.Queryx, crawlLog *logV1.CrawlLog) error {
 func (l *LogServer) WritePageLog(stream logV1.Log_WritePageLogServer) error {
 	q := l.insertPageLog.Borrow()
 	defer l.insertPageLog.Return(q)
+	r := l.insertResource.Borrow()
+	defer l.insertResource.Return(r)
 	pageLog := &logV1.PageLog{}
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
 			CollectPageLog(pageLog)
+			resources := pageLog.GetResource()
+			pageLog.Resource = nil
 			if err := writePageLog(q, pageLog); err != nil {
 				return fmt.Errorf("error writing page log: %w", err)
+			}
+			if err := writeResources(r, resources, pageLog.WarcId); err != nil {
+				return fmt.Errorf("error writing resources: %w", err)
 			}
 			return stream.SendAndClose(&emptypb.Empty{})
 		}
@@ -288,50 +179,87 @@ func writePageLog(query *gocqlx.Queryx, pageLog *logV1.PageLog) error {
 	return query.Bind(pl).Exec()
 }
 
+func writeResources(q *gocqlx.Queryx, resources []*logV1.PageLog_Resource, pageId string) error {
+	var firstErr error
+	resource := &Resource{PageId: pageId}
+	for _, r := range resources {
+		j, err := json.Marshal(resource.fromProto(r))
+		if err != nil {
+			return err
+		}
+		if err := q.Bind(j).Exec(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 func (l *LogServer) ListPageLogs(req *logV1.PageLogListRequest, stream logV1.Log_ListPageLogsServer) error {
+	r := l.listResourcesByPageId.Borrow()
+	defer l.listResourcesByPageId.Return(r)
+
 	if len(req.GetWarcId()) > 0 {
 		q := l.listPageLogsByWarcId.Borrow()
 		defer l.listPageLogsByWarcId.Return(q)
-		return listPageLogsByWarcId(q.WithContext(stream.Context()), req, stream.Send)
+		return listPageLogsByWarcId(q.WithContext(stream.Context()), r.WithContext(stream.Context()), req, stream.Send)
 	}
 	if len(req.GetQueryTemplate().GetExecutionId()) > 0 {
-		q := l.listPageLogsByExecutionId.Borrow()
-		defer l.listPageLogsByExecutionId.Return(q)
-		return listPageLogsByExecutionId(q.WithContext(stream.Context()), req, stream.Send)
+		p := l.listPageLogsByExecutionId.Borrow()
+		defer l.listPageLogsByExecutionId.Return(p)
+		return listPageLogsByExecutionId(p.WithContext(stream.Context()), r.WithContext(stream.Context()), req, stream.Send)
 	}
 	return fmt.Errorf("request must provide warcId or executionId")
 }
 
+func listResources(q *gocqlx.Queryx, pageId string) ([]*logV1.PageLog_Resource, error) {
+	var resources []*logV1.PageLog_Resource
+	p := q.BindMap(qb.M{"page_id": pageId})
+	iter := p.Iter()
+	defer iter.Close()
+	for resource := new(Resource); iter.StructScan(resource); resource = new(Resource) {
+		resources = append(resources, resource.toProto())
+	}
+	return resources, nil
+}
+
 // listPageLogsByWarcId lists page logs by warcId
-func listPageLogsByWarcId(query *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
+func listPageLogsByWarcId(q *gocqlx.Queryx, r *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
 	for _, warcId := range req.GetWarcId() {
 		pageLog := new(PageLog)
-		if err := query.BindMap(qb.M{"warc_id": warcId}).Get(pageLog); err != nil {
+		err := q.BindMap(qb.M{"warc_id": warcId}).Get(pageLog)
+		if err != nil {
 			return err
 		}
-		if err := fn(pageLog.toProto()); err != nil {
+		resources, err := listResources(r, warcId)
+		if err != nil {
+			return err
+		}
+		if err := fn(pageLog.toProto(resources)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func listPageLogsByExecutionId(query *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
+func listPageLogsByExecutionId(q *gocqlx.Queryx, r *gocqlx.Queryx, req *logV1.PageLogListRequest, fn func(*logV1.PageLog) error) error {
 	offset := int(req.GetOffset())
 	pageSize := int(req.GetPageSize())
 	executionId := req.GetQueryTemplate().GetExecutionId()
-
 	// count is the current number of rows processed by fn
 	count := 0
-	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
+	iter := q.BindMap(qb.M{"execution_id": executionId}).Iter()
+	defer iter.Close()
 	for pageLog := new(PageLog); iter.StructScan(pageLog); pageLog = new(PageLog) {
 		if count < offset {
 			count++
 			continue
 		}
-		err := fn(pageLog.toProto())
+		resources, err := listResources(r, pageLog.WarcId)
 		if err != nil {
-			_ = iter.Close()
+			return err
+		}
+		err = fn(pageLog.toProto(resources))
+		if err != nil {
 			return err
 		}
 		if offset+pageSize == 0 {
@@ -340,7 +268,6 @@ func listPageLogsByExecutionId(query *gocqlx.Queryx, req *logV1.PageLogListReque
 		count++
 		// stop when number of processed rows is what we requested
 		if count >= offset+pageSize {
-			_ = iter.Close()
 			return nil
 		}
 	}
@@ -384,6 +311,7 @@ func listCrawlLogsByExecutionId(query *gocqlx.Queryx, req *logV1.CrawlLogListReq
 	count := 0
 
 	iter := query.BindMap(qb.M{"execution_id": executionId}).Iter()
+	defer iter.Close()
 	for crawlLog := new(CrawlLog); iter.StructScan(crawlLog); crawlLog = new(CrawlLog) {
 		if count < offset {
 			count++
@@ -391,7 +319,6 @@ func listCrawlLogsByExecutionId(query *gocqlx.Queryx, req *logV1.CrawlLogListReq
 		}
 		err := fn(crawlLog.toProto())
 		if err != nil {
-			_ = iter.Close()
 			return err
 		}
 		if offset+pageSize == 0 {
@@ -400,7 +327,6 @@ func listCrawlLogsByExecutionId(query *gocqlx.Queryx, req *logV1.CrawlLogListReq
 		count++
 		// stop when number of processed rows equals what we requested
 		if count >= offset+pageSize {
-			_ = iter.Close()
 			return nil
 		}
 	}

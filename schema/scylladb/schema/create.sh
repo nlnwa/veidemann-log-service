@@ -14,7 +14,7 @@ function usage {
     >&2 echo "The following parameters can be set via environment:"
     >&2 echo "  MODE               - prod or test. Test keyspace is usable on a single node cluster (no replication)"
     >&2 echo "  DATACENTER         - datacenter name for network topology used in prod (optional in MODE=test)"
-    >&2 echo "  KEYSPACE           - keyspace (default: v7n_v2_{datacenter})"
+    >&2 echo "  KEYSPACE           - keyspace (default: v7n_v3_{datacenter})"
     >&2 echo "  REPLICATION_FACTOR - replication factor for prod (default: 2 for prod, 1 for test)"
     >&2 echo ""
     >&2 echo "The template-file argument must be fully qualified path to a v00#.cql.tmpl template file."
@@ -32,7 +32,7 @@ if [[ "$MODE" == "" ]]; then
 elif [[ "$MODE" == "prod" ]]; then
     if [[ "$DATACENTER" == "" ]]; then usage "missing DATACENTER parameter for prod mode"; fi
     datacenter=$DATACENTER
-    replication_factor=${REPLICATION_FACTOR:-2}
+    replication_factor=${REPLICATION_FACTOR:-3}
     replication="{'class': 'NetworkTopologyStrategy', '$datacenter': '${replication_factor}' }"
 elif [[ "$MODE" == "test" ]]; then 
     datacenter=${DATACENTER:-'test'}
@@ -42,7 +42,7 @@ else
     usage "invalid MODE=$MODE, expecting 'prod' or 'test'"
 fi
 
-keyspace=${KEYSPACE:-"v7n_v2_${datacenter}"}
+keyspace=${KEYSPACE:-"v7n_v3_${datacenter}"}
 
 if [[ $keyspace =~ [^a-zA-Z0-9_] ]]; then
     usage "invalid characters in KEYSPACE=$keyspace parameter, please use letters, digits or underscores"

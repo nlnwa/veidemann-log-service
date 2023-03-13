@@ -1,0 +1,80 @@
+--
+-- Creates v7n keyspace with tables for crawl logs and page logs.
+--
+-- Required parameters:
+--
+--   keyspace
+--     name of the keyspace
+--   replication
+--     replication strategy for the keyspace, such as
+--       for prod environments
+--         {'class': 'NetworkTopologyStrategy', '$datacenter': '${replication_factor}' }
+--       for test environments
+--         {'class': 'SimpleStrategy', 'replication_factor': '1'}
+
+CREATE KEYSPACE IF NOT EXISTS ${keyspace} WITH replication = ${replication};
+
+CREATE TYPE IF NOT EXISTS ${keyspace}.error (
+    code    int,
+    msg     text,
+    detail  text,
+);
+
+CREATE TABLE IF NOT EXISTS ${keyspace}.resource (
+    warc_id         uuid,
+    page_id         uuid,
+    uri             text,
+    referrer        text,
+    resource_type   text,
+    content_type    text,
+    discovery_path  text,
+    method          text,
+    from_cache      boolean,
+    renderable      boolean,
+    status_code     int,
+    error           frozen<error>,
+    PRIMARY KEY (page_id, warc_id),
+);
+
+CREATE TABLE IF NOT EXISTS ${keyspace}.page_log (
+    warc_id                 uuid,
+    execution_id            uuid,
+    job_execution_id        uuid,
+    collection_final_name   text,
+    uri                     text,
+    referrer                text,
+    method                  text,
+    outlink                 set<text>,
+    PRIMARY KEY (warc_id)
+);
+
+CREATE INDEX IF NOT EXISTS ON ${keyspace}.page_log (execution_id);
+
+CREATE TABLE IF NOT EXISTS ${keyspace}.crawl_log (
+    warc_id                 uuid,
+    execution_id            uuid,
+    job_execution_id        uuid,
+    requested_uri           text,
+    response_uri            text,
+    referrer                text,
+    collection_final_name   text,
+    method                  text,
+    time_stamp              timestamp,
+    fetch_time_stamp        timestamp,
+    retries                 int,
+    ip_address              text,
+    warc_refers_to          text,
+    record_type             text,
+    content_type            text,
+    discovery_path          text,
+    status_code             int,
+    error                   frozen<error>,
+    size                    bigint,
+    fetch_time_ms           bigint,
+    block_digest            text,
+    payload_digest          text,
+    storage_ref             text,
+    PRIMARY KEY (warc_id)
+);
+
+CREATE INDEX IF NOT EXISTS ON ${keyspace}.crawl_log (execution_id);

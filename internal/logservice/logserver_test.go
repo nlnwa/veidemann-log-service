@@ -1,11 +1,19 @@
+//go:build integration
+
 package logservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
-	"github.com/nlnwa/veidemann-api/go/commons/v1"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/nlnwa/veidemann-log-service/internal/scylla"
 	"github.com/nlnwa/veidemann-log-service/pkg/logservice"
@@ -14,13 +22,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/timestamppb"
-	"net"
-	"os"
-	"strconv"
-	"testing"
-	"time"
 )
 
 var (
@@ -31,9 +34,10 @@ var (
 
 func TestMain(m *testing.M) {
 	networkName := "test"
+	keyspace := "v3_test"
 	ctx := context.Background()
 
-	newNetwork, err := testcontainers.GenericNetwork(ctx, testcontainers.GenericNetworkRequest{
+	testNetwork, err := testcontainers.GenericNetwork(ctx, testcontainers.GenericNetworkRequest{
 		NetworkRequest: testcontainers.NetworkRequest{
 			Name:           networkName,
 			CheckDuplicate: true,
@@ -46,7 +50,7 @@ func TestMain(m *testing.M) {
 
 	scyllaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "scylladb/scylla:4.6.9",
+			Image:        "scylladb/scylla:4.6.11",
 			ExposedPorts: []string{"9042/tcp", "19042/tcp"},
 			Networks:     []string{networkName},
 			NetworkAliases: map[string][]string{
@@ -63,12 +67,12 @@ func TestMain(m *testing.M) {
 
 	if _, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "ghcr.io/nlnwa/veidemann-log-schema:2.0.0",
-			AutoRemove: true,
+			Image:      "ghcr.io/nlnwa/veidemann-log-schema:3.0.0",
 			Networks:   []string{networkName},
 			SkipReaper: true,
 			Env: map[string]string{
 				"CQLSH_HOST": "scylla",
+				"KEYSPACE":   keyspace,
 			},
 			WaitingFor: wait.ForLog("Schema initialized"),
 		},
@@ -89,7 +93,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	cfg := scylla.CreateCluster(gocql.LocalQuorum, "v7n_v2_dc1", cqlshHost)
+	cfg := scylla.CreateCluster(gocql.LocalQuorum, keyspace, cqlshHost)
 	cfg.Port = cqlshPort.Int()
 
 	session, err = scylla.Connect(cfg)
@@ -114,7 +118,7 @@ func TestMain(m *testing.M) {
 		}
 	}()
 
-	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", srvPort), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", srvPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
 	}
@@ -129,15 +133,13 @@ func TestMain(m *testing.M) {
 	_ = listener.Close()
 	logServer.Close()
 	_ = scyllaC.Terminate(ctx)
-	_ = newNetwork.Remove(ctx)
-
+	_ = testNetwork.Remove(ctx)
 	os.Exit(code)
 }
 
 func TestWriteCrawlLogs(t *testing.T) {
-	if err := truncate(CrawlLogTable); err != nil {
-		t.Fatal(err)
-	}
+	truncate(TableCrawlLog)
+
 	templates := []*logV1.CrawlLog{crawlLog1, crawlLog2}
 	concurrency := 10
 	n := 100
@@ -161,9 +163,9 @@ func TestWriteCrawlLogs(t *testing.T) {
 }
 
 func TestWritePageLogs(t *testing.T) {
-	if err := truncate(PageLogTable); err != nil {
-		t.Fatal(err)
-	}
+	truncate(TableResource)
+	truncate(TablePageLog)
+
 	templates := []*logV1.PageLog{pageLog1, pageLog2}
 	concurrency := 50
 
@@ -184,9 +186,7 @@ func TestWritePageLogs(t *testing.T) {
 }
 
 func TestListCrawlLogs(t *testing.T) {
-	if err := truncate(CrawlLogTable); err != nil {
-		t.Fatal(err)
-	}
+	truncate(TableCrawlLog)
 
 	crawlLogs := []*logV1.CrawlLog{crawlLog1, crawlLog2}
 
@@ -195,10 +195,12 @@ func TestListCrawlLogs(t *testing.T) {
 	}
 
 	count := 0
+	query := logServer.listCrawlLogsByExecutionId.Borrow()
+	defer logServer.listCrawlLogsByExecutionId.Return(query)
 
 	// read and assert
 	if err := listCrawlLogsByExecutionId(
-		logServer.listCrawlLogsByExecutionId.Borrow(),
+		query.Consistency(gocql.LocalQuorum),
 		&logV1.CrawlLogListRequest{
 			QueryTemplate: &logV1.CrawlLog{
 				ExecutionId: crawlLog1.ExecutionId,
@@ -229,57 +231,65 @@ func TestListCrawlLogs(t *testing.T) {
 }
 
 func TestListPageLog(t *testing.T) {
-	if err := truncate(PageLogTable); err != nil {
-		t.Fatal(err)
-	}
+	truncate(TablePageLog)
+	truncate(TableResource)
 
 	pageLogs := []*logV1.PageLog{pageLog1, pageLog2}
 
 	// insert
 	for _, pageLog := range pageLogs {
 		if err := logWriter.WritePageLog(context.Background(), pageLog); err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 	}
+
+	q := logServer.listPageLogsByWarcId.Borrow()
+	defer logServer.listPageLogsByWarcId.Return(q)
+	p := logServer.listPageLogsByExecutionId.Borrow()
+	defer logServer.listPageLogsByExecutionId.Return(p)
+	r := logServer.listResourcesByPageId.Borrow()
+	defer logServer.listResourcesByPageId.Return(r)
 
 	// try to list a page log that does not exist
 	bogus := uuid.NewString()
 	if err := listPageLogsByWarcId(
-		logServer.listPageLogsByWarcId.Borrow(),
-		&logV1.PageLogListRequest{
-			QueryTemplate: &logV1.PageLog{
-				WarcId: bogus,
-			},
-		},
+		q.Consistency(gocql.LocalQuorum),
+		r.Consistency(gocql.LocalQuorum),
+		&logV1.PageLogListRequest{WarcId: []string{bogus}},
 		func(got *logV1.PageLog) error {
 			t.Fatalf("Expected no callback to be made for bogus warcId: %s", bogus)
 			return nil
 		},
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	// expect to find page log with known warcId
-	if err := listPageLogsByWarcId(
-		logServer.listPageLogsByWarcId.Borrow(),
-		&logV1.PageLogListRequest{
-			QueryTemplate: &logV1.PageLog{
-				WarcId: pageLog1.WarcId,
-			},
-		},
-		func(got *logV1.PageLog) error {
-			expected := pageLog1
-			assertEqualPageLogs(t, expected, got)
-			return nil
-		}); err != nil {
+	); !errors.Is(err, gocql.ErrNotFound) {
 		t.Fatal(err)
 	}
 
 	count := 0
 
+	// expect to find page log with known warcId
+	err := listPageLogsByWarcId(
+		q.Consistency(gocql.LocalQuorum),
+		r.Consistency(gocql.LocalQuorum),
+		&logV1.PageLogListRequest{WarcId: []string{pageLog1.WarcId}},
+		func(got *logV1.PageLog) error {
+			count++
+			expected := pageLog1
+			assertEqualPageLogs(t, expected, got)
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1, got %d", count)
+	}
+
+	count = 0
+
 	// expect to list pagelogs with known execution id
 	if err := listPageLogsByExecutionId(
-		logServer.listPageLogsByExecutionId.Borrow(),
+		p.Consistency(gocql.LocalQuorum),
+		r.Consistency(gocql.LocalQuorum),
 		&logV1.PageLogListRequest{
 			QueryTemplate: &logV1.PageLog{
 				ExecutionId: pageLog1.ExecutionId,
@@ -321,7 +331,7 @@ func assertEqualPageLogs(t *testing.T, expected *logV1.PageLog, got *logV1.PageL
 		t.Error(err)
 	}
 	if string(a) != string(b) {
-		t.Errorf("Expected:\n%s, got:\n%s", a, b)
+		t.Errorf("Expected:\n%s,\n got:\n%s", a, b)
 	}
 }
 
@@ -342,124 +352,18 @@ func assertEqualCrawlLogs(t *testing.T, expected *logV1.CrawlLog, got *logV1.Cra
 }
 
 // truncate the contents of given table and wait for it to take effect.
-func truncate(table string) error {
+func truncate(table string) {
 	if err := session.ExecStmt(fmt.Sprintf("TRUNCATE %s", table)); err != nil {
-		return err
+		panic(err)
 	}
 	for {
 		count := 100
 		if err := qb.Select(table).CountAll().Query(session).Scan(&count); err != nil {
-			return err
+			panic(err)
 		}
 		if count == 0 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	return nil
 }
-
-func timestamp() *timestamppb.Timestamp {
-	return timestamppb.New(time.Now().UTC().Truncate(time.Millisecond))
-}
-
-var (
-	crawlLog1 = &logV1.CrawlLog{
-		ExecutionId:         uuid.NewString(),
-		JobExecutionId:      uuid.NewString(),
-		WarcId:              uuid.NewString(),
-		FetchTimeStamp:      timestamp(),
-		BlockDigest:         "sha1:f054ed8f9fd5893d6b70dc336a68e8092782723c",
-		CollectionFinalName: "Collection_2021",
-		ContentType:         "text/dns",
-		DiscoveryPath:       "P",
-		FetchTimeMs:         46,
-		IpAddress:           "8.8.8.8:53",
-		RecordType:          "response",
-		RequestedUri:        "dns:www.example.com",
-		Size:                50,
-		Error: &commons.Error{
-			Code:   -1,
-			Msg:    "Error",
-			Detail: "Everything went wrong",
-		},
-		StatusCode: 1,
-		StorageRef: "warcfile:Collection_2021-20210415110455-veidemann_contentwriter_775ffd88bc_5ljbb-00000.warc.gz:667",
-	}
-	crawlLog2 = &logV1.CrawlLog{
-		ExecutionId:         crawlLog1.ExecutionId,
-		JobExecutionId:      crawlLog1.JobExecutionId,
-		WarcId:              uuid.NewString(),
-		FetchTimeStamp:      timestamp(),
-		BlockDigest:         "sha1:f054ed8f9fd5893d6b70dc336a68e8092782723c",
-		CollectionFinalName: "Collection_2021",
-		ContentType:         "text/dns",
-		DiscoveryPath:       "P",
-		FetchTimeMs:         46,
-		IpAddress:           "8.8.8.8:53",
-		RecordType:          "response",
-		RequestedUri:        "dns:www.example.com",
-		Size:                50,
-		StatusCode:          200,
-		StorageRef:          "warcfile:Collection_2021-20210415110455-veidemann_contentwriter_775ffd88bc_5ljbb-00000.warc.gz:667",
-	}
-	pageLog1 = &logV1.PageLog{
-		ExecutionId:         uuid.NewString(),
-		WarcId:              uuid.NewString(),
-		JobExecutionId:      uuid.NewString(),
-		Uri:                 "https://www.nb.no/samlinger",
-		Referrer:            "https://www.nb.no/",
-		CollectionFinalName: "Veidemann_2021",
-		Method:              "GET",
-		Resource: []*logV1.PageLog_Resource{
-			{
-				Uri:           "https://www.nb.no/samlinger",
-				FromCache:     false,
-				Renderable:    false,
-				ResourceType:  "t",
-				ContentType:   "text/html",
-				StatusCode:    200,
-				DiscoveryPath: "L",
-				WarcId:        uuid.NewString(),
-				Referrer:      "https://www.nb.no/",
-				Error:         nil,
-				Method:        "GET",
-			},
-		},
-		Outlink: []string{
-			"https://www.nb.no/whatever",
-		},
-	}
-	pageLog2 = &logV1.PageLog{
-		WarcId:              uuid.NewString(),
-		ExecutionId:         pageLog1.ExecutionId,
-		JobExecutionId:      pageLog1.JobExecutionId,
-		Uri:                 "https://www.nb.no/presse",
-		Referrer:            "https://www.nb.no/",
-		CollectionFinalName: "Veidemann_2021",
-		Method:              "GET",
-		Resource: []*logV1.PageLog_Resource{
-			{
-				Uri:           "https://www.nb.no/presse",
-				FromCache:     false,
-				Renderable:    false,
-				ResourceType:  "t",
-				ContentType:   "text/html",
-				StatusCode:    200,
-				DiscoveryPath: "L",
-				WarcId:        uuid.NewString(),
-				Referrer:      "https://www.nb.no/",
-				Error:         nil,
-				Method:        "GET",
-			},
-		},
-		Outlink: []string{
-			"https://www.nb.no/foobar",
-		},
-	}
-)
-
-const (
-	CrawlLogTable = "crawl_log"
-	PageLogTable  = "page_log"
-)
