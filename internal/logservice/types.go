@@ -26,10 +26,10 @@ import (
 )
 
 type ErrorUDT struct {
-	gocqlx.UDT
-	Code   int32  `cql:"code" json:"code"`
-	Msg    string `cql:"msg" json:"msg"`
-	Detail string `cql:"detail" json:"detail"`
+	gocqlx.UDT `json:"-"`
+	Code       int32  `cql:"code" json:"code"`
+	Msg        string `cql:"msg" json:"msg"`
+	Detail     string `cql:"detail" json:"detail"`
 }
 
 func (e *ErrorUDT) toProto() *commons.Error {
