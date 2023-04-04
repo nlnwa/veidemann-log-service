@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/google/uuid"
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/scylladb/gocqlx/v2"
 	"github.com/scylladb/gocqlx/v2/qb"
@@ -183,6 +184,10 @@ func writeResources(q *gocqlx.Queryx, resources []*logV1.PageLog_Resource, pageI
 	var firstErr error
 	resource := &Resource{PageId: pageId}
 	for _, r := range resources {
+		if r.GetWarcId() == "" {
+			// If the resource has an empty WarcId field we must generate one to conform with the schema
+			r.WarcId = uuid.NewString()
+		}
 		j, err := json.Marshal(resource.fromProto(r))
 		if err != nil {
 			return err
