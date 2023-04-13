@@ -99,7 +99,7 @@ func (c *CrawlLog) toProto() *logV1.CrawlLog {
 
 type Resource struct {
 	Uri           string    `cql:"uri" json:"uri,omitempty"`
-	FromCache     bool      `cql:"from_cache" json:"fromCache,omitempty"`
+	FromCache     bool      `cql:"from_cache" json:"from_cache,omitempty"`
 	Renderable    bool      `cql:"renderable" json:"renderable,omitempty"`
 	ResourceType  string    `cql:"resource_type" json:"resource_type,omitempty"`
 	ContentType   string    `cql:"content_type" json:"content_type,omitempty"`
