@@ -31,6 +31,7 @@ import (
 	logV1 "github.com/nlnwa/veidemann-api/go/log/v1"
 	"github.com/nlnwa/veidemann-log-service/internal/logger"
 	"github.com/nlnwa/veidemann-log-service/internal/logservice"
+	"github.com/nlnwa/veidemann-log-service/internal/noop_logservice"
 	"github.com/nlnwa/veidemann-log-service/internal/scylla"
 	"github.com/nlnwa/veidemann-log-service/internal/tracing"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
@@ -59,6 +60,9 @@ func main() {
 	pflag.String("log-level", "info", "Log level, available levels are: panic, fatal, error, warn, info, debug and trace")
 	pflag.String("log-formatter", "logfmt", "Log formatter, available values are: logfmt and json")
 	pflag.Bool("log-method", false, "Log file:line of method caller")
+
+	pflag.Bool("noop", false, "No operation, just receive and discard messages")
+
 	pflag.Parse()
 
 	_ = viper.BindPFlags(pflag.CommandLine)
@@ -85,28 +89,33 @@ func main() {
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
 	)
 
-	scyllaCfg := scylla.CreateCluster(
-		gocql.ParseConsistency(viper.GetString("db-consistency")),
-		viper.GetString("db-keyspace"),
-		viper.GetStringSlice("db-host")...)
-	if session, err := scylla.Connect(scyllaCfg); err != nil {
-		panic(err)
-	} else {
-		defer session.Close()
+	if !viper.GetBool("noop") {
+		scyllaCfg := scylla.CreateCluster(
+			gocql.ParseConsistency(viper.GetString("db-consistency")),
+			viper.GetString("db-keyspace"),
+			viper.GetStringSlice("db-host")...)
+		if session, err := scylla.Connect(scyllaCfg); err != nil {
+			panic(err)
+		} else {
+			defer session.Close()
 
-		logServer := logservice.New(
-			session,
-			viper.GetInt("read-query-pool-size"),
-			viper.GetInt("write-query-pool-size"),
-			gocql.ParseConsistency(viper.GetString("db-read-consistency")),
-		)
-		logV1.RegisterLogServer(server, logServer)
-		defer logServer.Close()
+			logServer := logservice.New(
+				session,
+				viper.GetInt("read-query-pool-size"),
+				viper.GetInt("write-query-pool-size"),
+				gocql.ParseConsistency(viper.GetString("db-read-consistency")),
+			)
+			logV1.RegisterLogServer(server, logServer)
+			defer logServer.Close()
+		}
+		log.Info().
+			Str("hosts", strings.Join(viper.GetStringSlice("db-host"), ",")).
+			Str("keyspace", viper.GetString("db-keyspace")).
+			Msgf("Connected to scylla cluster")
+	} else {
+		log.Info().Msg("Running in noop mode")
+		logV1.RegisterLogServer(server, noop_logservice.New())
 	}
-	log.Info().
-		Str("hosts", strings.Join(viper.GetStringSlice("db-host"), ",")).
-		Str("keyspace", viper.GetString("db-keyspace")).
-		Msgf("Connected to scylla cluster")
 
 	metricsServer := &http.Server{
 		Addr: fmt.Sprintf("%s:%d", viper.GetString("host"), viper.GetInt("metrics-port")),
