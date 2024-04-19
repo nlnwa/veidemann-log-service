@@ -17,7 +17,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.19.0
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	google.golang.org/grpc v1.56.3
-	google.golang.org/protobuf v1.30.0
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
